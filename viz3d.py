@@ -158,6 +158,15 @@ def interactive_3d_html(pmodel, save_path, config=None, max_points=4000,
         margin=dict(l=0, r=0, t=40, b=0))
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     fig.write_html(save_path, include_plotlyjs=True, full_html=True)
+    # Inject a fixed "<- Menu" button so viewers can return to the landing page.
+    back = ('<a href="../index.html" style="position:fixed;top:10px;left:10px;'
+            'z-index:9999;background:#111;color:#56c5ff;border:1px solid #3a3a3a;'
+            'border-radius:4px;padding:8px 12px;font-family:Consolas,monospace;'
+            'text-decoration:none">&#8592; Menu</a>')
+    with open(save_path, "r", encoding="utf-8") as f:
+        html = f.read()
+    with open(save_path, "w", encoding="utf-8") as f:
+        f.write(html.replace("<body>", "<body>" + back, 1))
     return save_path
 
 
