@@ -148,6 +148,31 @@ class SizeCurve:
         return pts
 
 
+class Bend:
+    """SHAPE-style 'Bend' modifier: bend the object into an arc.
+
+    Each slice at axial coordinate s (along `axis`) is rotated within the
+    (axis, in-plane-perp) plane by an angle proportional to s, so a straight
+    structure curves. `angle_deg` is the total bend across the full axial range.
+    """
+
+    def __init__(self, axis, angle_deg):
+        self.axis = axis
+        self.angle = np.deg2rad(angle_deg)
+
+    def __call__(self, pts):
+        pts = np.array(pts, dtype=float, copy=True)
+        j, k = _PERP[self.axis]            # j = in-plane perpendicular, k = out of plane
+        s = pts[:, self.axis]
+        s_max = np.max(np.abs(s)) or 1.0
+        ang = self.angle * (s / s_max)     # bend angle grows with axial position
+        c, sn = np.cos(ang), np.sin(ang)
+        a, b = pts[:, self.axis].copy(), pts[:, j].copy()
+        pts[:, self.axis] = c * a - sn * b
+        pts[:, j] = sn * a + c * b
+        return pts
+
+
 class DensityFalloff:
     """Emissivity weighting that decreases from a reference surface inward.
 

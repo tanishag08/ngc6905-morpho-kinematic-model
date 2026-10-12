@@ -1,5 +1,11 @@
 """
-editor.py -- Phase 5: interactive browser editor (Plotly Dash), SHAPE-style.
+editor.py -- SHAPE: interactive morpho-kinematic modeller for NGC 6905 (Dash).
+
+A browser mock of the SHAPE software (Steffen & Lopez) workflow: modules
+(3D / Physics / Graphs / Rendering / Optimizer), an object tree with a live
+modifier stack (Twist / Wiggle-Bump / Size-curve / Bend), mesh & particle
+viewports, synthetic-vs-observation rendering, P-V diagrams, channel maps, and
+a kinematic-age readout, on a fully black SHAPE-style canvas.
 
 Launch with:
     python editor.py          # then open http://127.0.0.1:8050 in a browser
@@ -37,7 +43,7 @@ from plotly.subplots import make_subplots
 import config as cfg
 from config import ID_SHELL, ID_LOBE, ID_KNOT
 from particles import build_particle_model
-from modifiers import ModifierStack, Twist, Bump, SizeCurve
+from modifiers import ModifierStack, Twist, Bump, SizeCurve, Bend
 from render import (synthetic_image, synthetic_pv, channel_maps,
                     plot_channel_maps)
 from units import kinematic_age_from_arcsec
@@ -70,6 +76,7 @@ SLIDERS = [
     ("lobe_emiss", "lobe emissivity", 0, 3, 0.1, _d.lobe.emissivity),
     ("lobe_twist", "lobe twist (deg/arcsec) [mod]", 0, 10, 0.5, 0.0),
     ("lobe_bump_amp", "lobe bump amplitude (arcsec) [mod]", 0, 6, 0.5, 0.0),
+    ("lobe_bend_deg", "lobe bend (deg) [mod]", -60, 60, 1, 0.0),
 
     ("knot_pos_arcsec", "knot position (arcsec)", 25, 55, 0.5, _d.knot.axial_position_arcsec),
     ("knot_sigma_arcsec", "knot size sigma (arcsec)", 1, 10, 0.5, _d.knot.sigma_arcsec),
@@ -129,6 +136,8 @@ def make_config(params):
     size_pts = [params[i] for i in LOBE_SIZE_IDS]
     if any(abs(s - 1.0) > 1e-6 for s in size_pts):       # Size curve not flat
         stack.append(SizeCurve(1, size_pts))
+    if abs(params.get("lobe_bend_deg", 0.0)) > 1e-6:
+        stack.append(Bend(1, params["lobe_bend_deg"]))
     if stack:
         mods[ID_LOBE] = ModifierStack(stack)
     return conf, mods
@@ -143,6 +152,8 @@ def active_modifiers(params):
         names.append(f"Wiggle/Bump  (amp {params['lobe_bump_amp']:.1f}″)")
     if any(abs(params[i] - 1.0) > 1e-6 for i in LOBE_SIZE_IDS):
         names.append("Size  (curve)")
+    if abs(params.get("lobe_bend_deg", 0.0)) > 1e-6:
+        names.append(f"Bend  ({params['lobe_bend_deg']:.0f}°)")
     return names
 
 
@@ -179,11 +190,12 @@ def kinematic_ages(params):
 _COMP_COLOR = {ID_SHELL: "#33b5ff", ID_LOBE: "#ff9a1a", ID_KNOT: "#ff3333"}
 _COMP_NAME = {ID_SHELL: "shell", ID_LOBE: "lobes", ID_KNOT: "knots"}
 
-# SHAPE-like dark technical palette.
-PANEL_BG = "#15181d"
-PAPER_BG = "#1b1f26"
-ACCENT = "#4fc3f7"
-FG = "#d6dae0"
+# SHAPE look: fully black viewports/windows (as SHAPE renders), light text.
+PANEL_BG = "#000000"
+PAPER_BG = "#000000"
+BORDER = "#2b2b2b"
+ACCENT = "#56c5ff"
+FG = "#e6e6e6"
 _DARK = dict(template="plotly_dark", paper_bgcolor=PAPER_BG, plot_bgcolor=PANEL_BG,
              font=dict(color=FG, family="Consolas, monospace", size=11))
 
@@ -306,7 +318,7 @@ def age_table_html(params):
         f"<td style='text-align:right'>{v:,.0f} yr</td></tr>"
         for k, v in ages.items())
     spread = max(ages.values()) - min(ages.values())
-    return (f"<html><body style='margin:0;background:#1b1f26;color:#d6dae0;"
+    return (f"<html><body style='margin:0;background:#000000;color:#e6e6e6;"
             f"font-family:Consolas,monospace;font-size:12px'>"
             f"<table style='width:100%'>"
             f"<tr style='color:#9aa4b2'><th style='text-align:left'>component</th>"
@@ -339,7 +351,7 @@ def modstack_html(params):
     mods = active_modifiers(params)
     lobe_mods = ("<br>".join(f"&nbsp;&nbsp;▸ {m}" for m in mods)
                  if mods else "&nbsp;&nbsp;(none)")
-    return (f"<html><body style='margin:0;background:#1b1f26;color:#d6dae0;"
+    return (f"<html><body style='margin:0;background:#000000;color:#e6e6e6;"
             f"font-family:Consolas,monospace;font-size:11px'>"
             f"<div style='color:#9aa4b2'>MODIFIER STACK</div>"
             f"<div><span style='color:#33b5ff'>■</span> shell: &nbsp;(base ellipsoid)</div>"
@@ -374,6 +386,18 @@ def load_real_image(half=50.0):
     return np.arcsinh(np.clip((neb - lo) / (hi - lo + 1e-9), 0, 1) * 10)
 
 
+def real_fit_target(half=50.0):
+    """Star-suppressed observation downsampled to the fit grid (100x100), or None."""
+    import os
+    if not os.path.exists(REAL_IMAGE_PATH):
+        return None, half
+    from observations import suppress_stars
+    neb = suppress_stars(np.load(REAL_IMAGE_PATH))
+    k = neb.shape[0] // 100
+    target = neb[:100 * k, :100 * k].reshape(100, k, 100, k).mean(axis=(1, 3))
+    return target, half
+
+
 # ---------------------------------------------------------------------------
 # Params save / load helpers
 # ---------------------------------------------------------------------------
@@ -396,7 +420,7 @@ STRUCTURE_SECTIONS = [
     ("Orientation / scene", ["inclination_deg", "position_angle_deg", "distance_kpc"]),
     ("Shell  (ellipsoid)", ["shell_radius_arcsec", "shell_thickness_arcsec"]),
     ("Lobes  (bipolar cones)", ["lobe_length_arcsec", "lobe_opening_deg", "lobe_wall_arcsec"]),
-    ("Lobe modifiers  (twist / bump)", ["lobe_twist", "lobe_bump_amp"]),
+    ("Lobe modifiers  (twist / bump / bend)", ["lobe_twist", "lobe_bump_amp", "lobe_bend_deg"]),
     ("Knots  (ansae)", ["knot_pos_arcsec", "knot_sigma_arcsec"]),
 ]
 PHYSICS_SECTIONS = [
@@ -404,17 +428,17 @@ PHYSICS_SECTIONS = [
     ("Velocity  (homologous v = H·r)", ["shell_vexp_kms", "lobe_vtip_kms", "knot_vel_kms"]),
 ]
 
-# Dark SHAPE-like styles.
-S_APP = {"backgroundColor": "#0f1115", "color": FG, "fontFamily": "Consolas, monospace",
+# Fully-black SHAPE styles.
+S_APP = {"backgroundColor": "#000000", "color": FG, "fontFamily": "Consolas, monospace",
          "padding": "8px", "minHeight": "100vh"}
-S_PANEL = {"backgroundColor": PAPER_BG, "border": "1px solid #2a2f37",
-           "borderRadius": "4px", "padding": "8px", "margin": "4px"}
-S_BTN = {"backgroundColor": "#2a2f37", "color": FG, "border": "1px solid #3a4150",
+S_PANEL = {"backgroundColor": "#000000", "border": "1px solid " + BORDER,
+           "borderRadius": "3px", "padding": "8px", "margin": "4px"}
+S_BTN = {"backgroundColor": "#111111", "color": FG, "border": "1px solid #3a3a3a",
          "borderRadius": "3px", "padding": "6px 10px", "marginRight": "6px",
          "cursor": "pointer", "fontFamily": "Consolas, monospace"}
-S_TAB = {"backgroundColor": "#161a20", "color": "#9aa4b2", "border": "1px solid #2a2f37",
+S_TAB = {"backgroundColor": "#000000", "color": "#8a8a8a", "border": "1px solid " + BORDER,
          "padding": "6px"}
-S_TAB_SEL = {"backgroundColor": PAPER_BG, "color": ACCENT, "border": "1px solid #2a2f37",
+S_TAB_SEL = {"backgroundColor": "#0a0a0a", "color": ACCENT, "border": "1px solid " + BORDER,
              "borderTop": "2px solid " + ACCENT, "padding": "6px"}
 
 
@@ -422,7 +446,7 @@ def build_app():
     from dash import Dash, dcc, html, Input, Output, State, ctx, no_update
 
     app = Dash(__name__)
-    app.title = "NGC 6905 — SHAPE-style"
+    app.title = "SHAPE — NGC 6905"
     half = _d.grid.half_size_arcsec
 
     def slider_row(sid):
@@ -467,9 +491,10 @@ def build_app():
     ])
 
     toolbar = html.Div([
-        html.Span("NGC 6905 · morpho-kinematic model ",
-                  style={"fontWeight": "bold", "color": ACCENT, "fontSize": "15px"}),
-        html.Span("(SHAPE-style)   ", style={"color": "#8a93a0"}),
+        html.Span("SHAPE", style={"fontWeight": "bold", "color": ACCENT,
+                                  "fontSize": "18px", "letterSpacing": "2px"}),
+        html.Span("  NGC 6905  ", style={"color": FG, "fontSize": "14px"}),
+        html.Span("[model]   ", style={"color": "#777"}),
         html.Button("Reset ★published", id="reset_btn", n_clicks=0, style=S_BTN),
         html.Button("Save", id="save_btn", n_clicks=0, style=S_BTN),
         dcc.Upload(html.Button("Load", style=S_BTN), id="upload_params",
@@ -486,6 +511,20 @@ def build_app():
                  style={"fontSize": "11px", "color": "#8a93a0"}),
     ], style={"maxHeight": "74vh", "overflowY": "auto", "paddingRight": "6px"})
 
+    # Optimizer module: fit the model geometry to the observation.
+    optimizer_module = html.Div([
+        html.Div("Optimizer — fit model to observation", style={"color": ACCENT,
+                 "fontSize": "12px", "fontWeight": "bold", "margin": "6px 0"}),
+        html.Button("► FIT GEOMETRY TO OBSERVATION", id="optimize_btn", n_clicks=0,
+                    style=dict(S_BTN, **{"width": "100%", "marginBottom": "6px"})),
+        html.Iframe(id="optimize_status", style={"border": 0, "width": "100%",
+                                                 "height": "130px", "backgroundColor": "#000"}),
+        html.Div("Optimises inclination, PA, shell radius, lobe length and opening "
+                 "angle to best match the observation image (Powell). Geometry only "
+                 "— velocities are not constrained by an image.",
+                 style={"fontSize": "11px", "color": "#8a8a8a"}),
+    ], style={"maxHeight": "74vh", "overflowY": "auto", "paddingRight": "6px"})
+
     tabs = dcc.Tabs([
         dcc.Tab(module(STRUCTURE_SECTIONS), label="3D",
                 style=S_TAB, selected_style=S_TAB_SEL),
@@ -494,6 +533,8 @@ def build_app():
         dcc.Tab(graphs_module, label="Graphs",
                 style=S_TAB, selected_style=S_TAB_SEL),
         dcc.Tab(render_module, label="Rendering",
+                style=S_TAB, selected_style=S_TAB_SEL),
+        dcc.Tab(optimizer_module, label="Optimizer",
                 style=S_TAB, selected_style=S_TAB_SEL),
     ], style={"height": "34px"})
 
@@ -581,6 +622,39 @@ def build_app():
         p = params_from_json(text)
         return [p[sid] for sid in SLIDER_IDS]
 
+    # --- Optimizer: fit geometry to the observation, push best-fit to sliders ---
+    import fitting
+    FIT_IDS = fitting.PARAM_NAMES   # inclination, PA, shell radius, lobe length, opening
+
+    @app.callback(
+        [Output(sid, "value", allow_duplicate=True) for sid in FIT_IDS]
+        + [Output("optimize_status", "srcDoc")],
+        Input("optimize_btn", "n_clicks"),
+        [State(sid, "value") for sid in SLIDER_IDS], prevent_initial_call=True)
+    def optimize(n, *vals):
+        params = dict(zip(SLIDER_IDS, [float(v) for v in vals]))
+        target, hlf = real_fit_target(half)
+        if target is None:
+            return [no_update] * len(FIT_IDS) + [
+                "<body style='color:#e6e6e6;background:#000;font-family:monospace;"
+                "font-size:11px'>No observation image found.</body>"]
+        start = [params[k] for k in FIT_IDS]
+        res = fitting.fit_image(target, hlf, base_config=make_config(params)[0],
+                                start_params=start, verbose=False)
+        best = [res["best"][k] for k in FIT_IDS]
+        rows = "".join(
+            f"<tr><td>{k.replace('_',' ')}</td><td style='text-align:right'>"
+            f"{res['start'][k]:.1f}</td><td style='text-align:right;color:#56c5ff'>"
+            f"{res['best'][k]:.1f}</td></tr>" for k in FIT_IDS)
+        html_status = (
+            f"<body style='margin:0;color:#e6e6e6;background:#000;font-family:monospace;"
+            f"font-size:11px'><div style='color:#56c5ff'>FIT corr = "
+            f"{1 - res['best_loss']:.3f}</div>"
+            f"<table style='width:100%'><tr style='color:#888'><td>param</td>"
+            f"<td style='text-align:right'>start</td><td style='text-align:right'>"
+            f"best</td></tr>{rows}</table></body>")
+        return best + [html_status]
+
     return app
 
 
@@ -600,12 +674,15 @@ def _selftest():
         _ = fig_3d(pm, params, mode=mode)
     ages = kinematic_ages(params)
     assert all(np.isfinite(list(ages.values())))
-    # modifiers path incl. SHAPE Size-curve
+    # modifiers path incl. SHAPE Size-curve + Bend
     params2 = dict(params, lobe_twist=4.0, lobe_bump_amp=3.0,
-                   lobe_size_0=1.4, lobe_size_4=0.4)
+                   lobe_size_0=1.4, lobe_size_4=0.4, lobe_bend_deg=25.0)
     pm2 = compute_model(params2, 2000)
-    assert active_modifiers(params2) and len(active_modifiers(params2)) == 3
+    assert len(active_modifiers(params2)) == 4   # twist, bump, size, bend
     _ = fig_size_curve(params2); _ = modstack_html(params2)
+    # optimizer target available?
+    tgt, _h = real_fit_target(half)
+    print(f"  optimizer target present: {tgt is not None}")
     # save/load round-trip
     txt = params_to_json(params)
     back = params_from_json(txt)
