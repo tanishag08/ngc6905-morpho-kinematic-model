@@ -43,7 +43,7 @@ from plotly.subplots import make_subplots
 import config as cfg
 from config import ID_SHELL, ID_LOBE, ID_KNOT
 from particles import build_particle_model
-from modifiers import ModifierStack, Twist, Bump, SizeCurve, Bend
+from modifiers import ModifierStack, Twist, Bump, SizeCurve, Bend, BendCurve
 from render import (synthetic_image, synthetic_pv, channel_maps,
                     plot_channel_maps)
 from units import kinematic_age_from_arcsec
@@ -76,7 +76,6 @@ SLIDERS = [
     ("lobe_emiss", "lobe emissivity", 0, 3, 0.1, _d.lobe.emissivity),
     ("lobe_twist", "lobe twist (deg/arcsec) [mod]", 0, 10, 0.5, 0.0),
     ("lobe_bump_amp", "lobe bump amplitude (arcsec) [mod]", 0, 6, 0.5, 0.0),
-    ("lobe_bend_deg", "lobe bend (deg) [mod]", -60, 60, 1, 0.0),
 
     ("knot_pos_arcsec", "knot position (arcsec)", 25, 55, 0.5, _d.knot.axial_position_arcsec),
     ("knot_sigma_arcsec", "knot size sigma (arcsec)", 1, 10, 0.5, _d.knot.sigma_arcsec),
@@ -90,8 +89,17 @@ SLIDERS = [
     ("lobe_size_2", "Size curve · 2", 0.2, 2.0, 0.05, 1.0),
     ("lobe_size_3", "Size curve · 3", 0.2, 2.0, 0.05, 1.0),
     ("lobe_size_4", "Size curve · tip", 0.2, 2.0, 0.05, 1.0),
+
+    # SHAPE 'Bend' modifier curve: per-slice bend angle (deg) base -> tip.
+    ("lobe_bend_0", "Bend curve · base", -45, 45, 1, 0.0),
+    ("lobe_bend_1", "Bend curve · 1", -45, 45, 1, 0.0),
+    ("lobe_bend_2", "Bend curve · 2", -45, 45, 1, 0.0),
+    ("lobe_bend_3", "Bend curve · 3", -45, 45, 1, 0.0),
+    ("lobe_bend_4", "Bend curve · tip", -45, 45, 1, 0.0),
 ]
 LOBE_SIZE_IDS = [f"lobe_size_{i}" for i in range(5)]
+LOBE_BEND_IDS = [f"lobe_bend_{i}" for i in range(5)]
+MOD_NAMES = ["Twist", "Wiggle/Bump", "Size", "Bend"]   # default stack order
 SLIDER_IDS = [s[0] for s in SLIDERS]
 DEFAULT_PARAMS = {s[0]: s[5] for s in SLIDERS}
 
@@ -126,35 +134,43 @@ def make_config(params):
                        position_angle_deg=params["position_angle_deg"])
     conf = replace(_d, shell=shell, lobe=lobe, knot=knot, geometry=geometry)
 
-    # Optional lobe modifier stack (applied in order), SHAPE-style.
-    mods = {}
-    stack = []
-    if params["lobe_twist"] > 0:
-        stack.append(Twist(1, params["lobe_twist"]))
-    if params["lobe_bump_amp"] > 0:
-        stack.append(Bump(1, params["lobe_bump_amp"], frequency=6))
+    # Lobe modifier stack built in the user-chosen ORDER (SHAPE-style, reorderable).
+    order = params.get("mod_order") or MOD_NAMES
     size_pts = [params[i] for i in LOBE_SIZE_IDS]
-    if any(abs(s - 1.0) > 1e-6 for s in size_pts):       # Size curve not flat
-        stack.append(SizeCurve(1, size_pts))
-    if abs(params.get("lobe_bend_deg", 0.0)) > 1e-6:
-        stack.append(Bend(1, params["lobe_bend_deg"]))
-    if stack:
-        mods[ID_LOBE] = ModifierStack(stack)
+    bend_pts = [params[i] for i in LOBE_BEND_IDS]
+
+    def builder(name):
+        if name == "Twist" and params["lobe_twist"] > 0:
+            return Twist(1, params["lobe_twist"])
+        if name == "Wiggle/Bump" and params["lobe_bump_amp"] > 0:
+            return Bump(1, params["lobe_bump_amp"], frequency=6)
+        if name == "Size" and any(abs(s - 1.0) > 1e-6 for s in size_pts):
+            return SizeCurve(1, size_pts)
+        if name == "Bend" and any(abs(b) > 1e-6 for b in bend_pts):
+            return BendCurve(1, bend_pts)
+        return None
+
+    stack = [m for m in (builder(n) for n in order) if m is not None]
+    mods = {ID_LOBE: ModifierStack(stack)} if stack else {}
     return conf, mods
 
 
 def active_modifiers(params):
-    """Return the list of active lobe modifier names (for the stack display)."""
-    names = []
-    if params["lobe_twist"] > 0:
-        names.append(f"Twist  ({params['lobe_twist']:.1f}°/″)")
-    if params["lobe_bump_amp"] > 0:
-        names.append(f"Wiggle/Bump  (amp {params['lobe_bump_amp']:.1f}″)")
-    if any(abs(params[i] - 1.0) > 1e-6 for i in LOBE_SIZE_IDS):
-        names.append("Size  (curve)")
-    if abs(params.get("lobe_bend_deg", 0.0)) > 1e-6:
-        names.append(f"Bend  ({params['lobe_bend_deg']:.0f}°)")
-    return names
+    """Return active lobe modifier names, in the current stack order."""
+    order = params.get("mod_order") or MOD_NAMES
+    size_pts = [params[i] for i in LOBE_SIZE_IDS]
+    bend_pts = [params[i] for i in LOBE_BEND_IDS]
+    out = []
+    for name in order:
+        if name == "Twist" and params["lobe_twist"] > 0:
+            out.append(f"Twist  ({params['lobe_twist']:.1f}°/″)")
+        elif name == "Wiggle/Bump" and params["lobe_bump_amp"] > 0:
+            out.append(f"Wiggle/Bump  (amp {params['lobe_bump_amp']:.1f}″)")
+        elif name == "Size" and any(abs(s - 1.0) > 1e-6 for s in size_pts):
+            out.append("Size  (curve)")
+        elif name == "Bend" and any(abs(b) > 1e-6 for b in bend_pts):
+            out.append("Bend  (curve)")
+    return out
 
 
 def compute_model(params, n_particles):
@@ -213,28 +229,28 @@ def _image_heatmap(img, half, title, cmap="Inferno"):
     return fig
 
 
-def fig_synthetic(pmodel, half):
+def fig_synthetic(pmodel, half, cmap="Inferno"):
     img, _ = synthetic_image(pmodel, pixel_scale=0.5, seeing_fwhm=1.0,
                              fov_arcsec=2 * half)
-    return _image_heatmap(img, half, "Synthetic image (model)")
+    return _image_heatmap(img, half, "Synthetic image (model)", cmap=cmap)
 
 
-def fig_real(half):
+def fig_real(half, cmap="Inferno"):
     img = load_real_image(half)
     if img is None:
         fig = go.Figure()
         fig.add_annotation(text="No real image found<br>(data/ps1_g_aligned.npy)",
-                           showarrow=False)
-        fig.update_layout(title="Real image", height=330)
+                           showarrow=False, font=dict(color=FG))
+        fig.update_layout(title="Observation", height=320, **_DARK)
         return fig
-    return _image_heatmap(img, half, "Real image (Pan-STARRS g)")
+    return _image_heatmap(img, half, "Observation (Pan-STARRS g)", cmap=cmap)
 
 
-def fig_pv(pmodel, pa_deg, title):
+def fig_pv(pmodel, pa_deg, title, cmap="Inferno"):
     pv, pe, ve = synthetic_pv(pmodel, pa_deg)
     fig = go.Figure(go.Heatmap(z=pv, x=np.linspace(pe[0], pe[-1], pv.shape[1]),
                                y=np.linspace(ve[0], ve[-1], pv.shape[0]),
-                               colorscale="Inferno", showscale=False))
+                               colorscale=cmap, showscale=False))
     fig.update_xaxes(title="position (arcsec)")
     fig.update_yaxes(title="v_los (km/s)")
     fig.update_layout(title=title, margin=dict(l=45, r=10, t=36, b=40),
@@ -327,23 +343,32 @@ def age_table_html(params):
             f"</body></html>")
 
 
-def fig_size_curve(params):
-    """SHAPE 'Graphs' module: the lobe Size modifier curve (radius scale vs axis)."""
-    y = [params[i] for i in LOBE_SIZE_IDS]
+def _curve_fig(y, title, y_title, y_range, baseline):
     x = np.linspace(0, 1, len(y))
     xf = np.linspace(0, 1, 100)
     yf = np.interp(xf, x, y)
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=xf, y=yf, mode="lines", line=dict(color=ACCENT, width=2),
-                             name="Size curve"))
+    fig.add_trace(go.Scatter(x=xf, y=yf, mode="lines", line=dict(color=ACCENT, width=2)))
     fig.add_trace(go.Scatter(x=x, y=y, mode="markers",
-                             marker=dict(size=9, color="#ff9a1a"), name="control pts"))
-    fig.add_hline(y=1.0, line=dict(color="#555", dash="dot"))
+                             marker=dict(size=9, color="#ff9a1a")))
+    fig.add_hline(y=baseline, line=dict(color="#555", dash="dot"))
     fig.update_xaxes(title="along lobe axis   base → tip", range=[-0.02, 1.02])
-    fig.update_yaxes(title="radius scale", range=[0, 2.1])
-    fig.update_layout(title="Size modifier curve (Graphs)", height=260,
-                      margin=dict(l=45, r=10, t=36, b=40), showlegend=False, **_DARK)
+    fig.update_yaxes(title=y_title, range=y_range)
+    fig.update_layout(title=title, height=210, margin=dict(l=45, r=10, t=34, b=38),
+                      showlegend=False, **_DARK)
     return fig
+
+
+def fig_size_curve(params):
+    """SHAPE Graphs: lobe Size modifier curve (radius scale vs axis)."""
+    return _curve_fig([params[i] for i in LOBE_SIZE_IDS],
+                      "Size curve (radius scale)", "radius scale", [0, 2.1], 1.0)
+
+
+def fig_bend_curve(params):
+    """SHAPE Graphs: lobe Bend modifier curve (bend angle vs axis)."""
+    return _curve_fig([params[i] for i in LOBE_BEND_IDS],
+                      "Bend curve (deg)", "bend (deg)", [-48, 48], 0.0)
 
 
 def modstack_html(params):
@@ -420,7 +445,7 @@ STRUCTURE_SECTIONS = [
     ("Orientation / scene", ["inclination_deg", "position_angle_deg", "distance_kpc"]),
     ("Shell  (ellipsoid)", ["shell_radius_arcsec", "shell_thickness_arcsec"]),
     ("Lobes  (bipolar cones)", ["lobe_length_arcsec", "lobe_opening_deg", "lobe_wall_arcsec"]),
-    ("Lobe modifiers  (twist / bump / bend)", ["lobe_twist", "lobe_bump_amp", "lobe_bend_deg"]),
+    ("Lobe modifiers  (twist / bump; Size+Bend in Graphs)", ["lobe_twist", "lobe_bump_amp"]),
     ("Knots  (ansae)", ["knot_pos_arcsec", "knot_sigma_arcsec"]),
 ]
 PHYSICS_SECTIONS = [
@@ -468,10 +493,16 @@ def build_app():
         return html.Div([section(t, ids) for t, ids in sections],
                         style={"maxHeight": "74vh", "overflowY": "auto", "paddingRight": "6px"})
 
-    # Object tree + live modifier stack (SHAPE's object/modifier hierarchy).
+    # Object tree + live modifier stack (SHAPE's object/modifier hierarchy),
+    # with a reorderable stack-order control (drag chips to reorder; remove/re-add).
     tree = html.Div([
         html.Iframe(id="modstack", style={"border": 0, "width": "100%",
-                                          "height": "120px", "backgroundColor": PAPER_BG}),
+                                          "height": "120px", "backgroundColor": "#000"}),
+        html.Div("stack order (drag to reorder)",
+                 style={"color": "#8a8a8a", "fontSize": "10px", "marginTop": "4px"}),
+        dcc.Dropdown(id="mod_order", options=[{"label": m, "value": m} for m in MOD_NAMES],
+                     value=list(MOD_NAMES), multi=True, clearable=False,
+                     style={"fontSize": "11px", "color": "#000"}),
     ], style=dict(S_PANEL, **{"fontSize": "12px"}))
 
     # Render module controls.
@@ -483,11 +514,16 @@ def build_app():
                        value="Particles (component)",
                        style={"fontSize": "12px"},
                        labelStyle={"display": "block", "margin": "2px 0"}),
-        html.Hr(style={"borderColor": "#2a2f37"}),
+        html.Hr(style={"borderColor": BORDER}),
+        html.Div("Colormap", style={"color": ACCENT, "fontSize": "12px", "fontWeight": "bold"}),
+        dcc.RadioItems(id="cmap", options=["Inferno", "Greys", "Hot", "Viridis"],
+                       value="Inferno", style={"fontSize": "12px"},
+                       labelStyle={"display": "inline-block", "marginRight": "8px"}),
+        html.Hr(style={"borderColor": BORDER}),
         html.Button("► RENDER (full res + channel maps)", id="render_btn", n_clicks=0,
                     style=dict(S_BTN, **{"width": "100%", "marginBottom": "6px"})),
         html.Div("Dragging sliders uses a reduced particle count for speed; "
-                 "RENDER does the full pass.", style={"fontSize": "11px", "color": "#8a93a0"}),
+                 "RENDER does the full pass.", style={"fontSize": "11px", "color": "#8a8a8a"}),
     ])
 
     toolbar = html.Div([
@@ -502,13 +538,15 @@ def build_app():
         dcc.Download(id="download_params"),
     ], style=dict(S_PANEL, **{"marginBottom": "6px"}))
 
-    # Graphs module: the SHAPE 'Size' modifier curve (control points + plot).
+    # Graphs module: SHAPE's curve-driven Size and Bend modifiers.
     graphs_module = html.Div([
-        section("Lobe Size modifier  (SHAPE 'Size')", LOBE_SIZE_IDS),
+        section("Size modifier curve", LOBE_SIZE_IDS),
         dcc.Graph(id="g_sizecurve", config={"displayModeBar": False}),
-        html.Div("Set the control points to shape the lobe radius from base to "
-                 "tip (1.0 = unchanged). This is SHAPE's curve-driven Size modifier.",
-                 style={"fontSize": "11px", "color": "#8a93a0"}),
+        section("Bend modifier curve", LOBE_BEND_IDS),
+        dcc.Graph(id="g_bendcurve", config={"displayModeBar": False}),
+        html.Div("Edit the control points to shape the lobe radius (Size) and its "
+                 "curvature (Bend) from base to tip — SHAPE's curve-driven modifiers.",
+                 style={"fontSize": "11px", "color": "#8a8a8a"}),
     ], style={"maxHeight": "74vh", "overflowY": "auto", "paddingRight": "6px"})
 
     # Optimizer module: fit the model geometry to the observation.
@@ -580,21 +618,24 @@ def build_app():
         [Output("g_synth", "figure"), Output("g_real", "figure"),
          Output("g_pv_major", "figure"), Output("g_pv_minor", "figure"),
          Output("g_3d", "figure"), Output("age_box", "srcDoc"),
-         Output("g_sizecurve", "figure"), Output("modstack", "srcDoc"),
-         Output("channel_img", "src")],
+         Output("g_sizecurve", "figure"), Output("g_bendcurve", "figure"),
+         Output("modstack", "srcDoc"), Output("channel_img", "src")],
         [Input(sid, "value") for sid in SLIDER_IDS]
-        + [Input("render_btn", "n_clicks"), Input("view_mode", "value")],
+        + [Input("render_btn", "n_clicks"), Input("view_mode", "value"),
+           Input("mod_order", "value"), Input("cmap", "value")],
     )
     def update(*vals):
-        params = dict(zip(SLIDER_IDS, [float(v) for v in vals[:len(SLIDER_IDS)]]))
-        view_mode = vals[-1]
+        n = len(SLIDER_IDS)
+        params = dict(zip(SLIDER_IDS, [float(v) for v in vals[:n]]))
+        view_mode, mod_order, cmap = vals[n + 1], vals[n + 2], vals[n + 3]
+        params["mod_order"] = list(mod_order) if mod_order else list(MOD_NAMES)
         full = (ctx.triggered_id == "render_btn")
         pmodel = compute_model(params, N_FULL if full else N_LIVE)
-        figs = (fig_synthetic(pmodel, half), fig_real(half),
-                fig_pv(pmodel, cfg.DEFAULT.render.pv_slit_pa_major_deg, "P-V major (PA 160°)"),
-                fig_pv(pmodel, cfg.DEFAULT.render.pv_slit_pa_minor_deg, "P-V minor (PA 70°)"),
+        figs = (fig_synthetic(pmodel, half, cmap), fig_real(half, cmap),
+                fig_pv(pmodel, cfg.DEFAULT.render.pv_slit_pa_major_deg, "P-V major (PA 160°)", cmap),
+                fig_pv(pmodel, cfg.DEFAULT.render.pv_slit_pa_minor_deg, "P-V minor (PA 70°)", cmap),
                 fig_3d(pmodel, params, mode=view_mode), age_table_html(params),
-                fig_size_curve(params), modstack_html(params))
+                fig_size_curve(params), fig_bend_curve(params), modstack_html(params))
         channels = channel_maps_png_b64(pmodel) if full else no_update
         return (*figs, channels)
 
@@ -674,13 +715,19 @@ def _selftest():
         _ = fig_3d(pm, params, mode=mode)
     ages = kinematic_ages(params)
     assert all(np.isfinite(list(ages.values())))
-    # modifiers path incl. SHAPE Size-curve + Bend
+    # modifiers path incl. SHAPE Size-curve + Bend-curve
     params2 = dict(params, lobe_twist=4.0, lobe_bump_amp=3.0,
-                   lobe_size_0=1.4, lobe_size_4=0.4, lobe_bend_deg=25.0)
+                   lobe_size_0=1.4, lobe_size_4=0.4, lobe_bend_4=25.0, lobe_bend_2=12.0)
     pm2 = compute_model(params2, 2000)
     assert len(active_modifiers(params2)) == 4   # twist, bump, size, bend
-    _ = fig_size_curve(params2); _ = modstack_html(params2)
-    # optimizer target available?
+    _ = fig_size_curve(params2); _ = fig_bend_curve(params2); _ = modstack_html(params2)
+    # reorderable stack: reversing the order must change the applied result
+    pr = dict(params2, mod_order=list(reversed(MOD_NAMES)))
+    assert active_modifiers(pr)[0] != active_modifiers(params2)[0]
+    _ = compute_model(pr, 2000)
+    # colormap variants build
+    for cm in ["Inferno", "Greys", "Hot", "Viridis"]:
+        _ = fig_synthetic(pm, half, cm); _ = fig_pv(pm, 160, "m", cm)
     tgt, _h = real_fit_target(half)
     print(f"  optimizer target present: {tgt is not None}")
     # save/load round-trip

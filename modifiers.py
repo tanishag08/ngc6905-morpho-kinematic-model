@@ -173,6 +173,33 @@ class Bend:
         return pts
 
 
+class BendCurve:
+    """SHAPE 'Bend' driven by a curve (edited in the Graphs module).
+
+    The per-slice rotation angle is read from control points along the axis
+    (degrees at normalised |axial| positions base->tip) and applied with the sign
+    of the axial coordinate, so the two lobes bend point-symmetrically.
+    """
+
+    def __init__(self, axis, control_angles_deg):
+        self.axis = axis
+        self.angles = np.deg2rad(np.asarray(control_angles_deg, dtype=float))
+
+    def __call__(self, pts):
+        pts = np.array(pts, dtype=float, copy=True)
+        j, k = _PERP[self.axis]
+        s = pts[:, self.axis]
+        s_max = np.max(np.abs(s)) or 1.0
+        t = np.abs(s) / s_max
+        xp = np.linspace(0.0, 1.0, len(self.angles))
+        ang = np.interp(t, xp, self.angles) * np.sign(s)
+        c, sn = np.cos(ang), np.sin(ang)
+        a, b = pts[:, self.axis].copy(), pts[:, j].copy()
+        pts[:, self.axis] = c * a - sn * b
+        pts[:, j] = sn * a + c * b
+        return pts
+
+
 class DensityFalloff:
     """Emissivity weighting that decreases from a reference surface inward.
 
