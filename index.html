@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SHAPE — NGC 6905 morpho-kinematic model</title>
+<style>
+  body { background:#000; color:#e6e6e6; font-family:Consolas,monospace;
+         max-width:820px; margin:0 auto; padding:28px 18px; line-height:1.55; }
+  a { color:#56c5ff; text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  h1 { color:#56c5ff; letter-spacing:2px; margin-bottom:2px; }
+  .sub { color:#888; margin-top:0; }
+  .card { border:1px solid #2b2b2b; border-radius:4px; padding:14px 16px; margin:12px 0;
+          background:#060606; }
+  .big { font-size:17px; }
+  img { max-width:100%; border:1px solid #2b2b2b; border-radius:4px; margin-top:8px; }
+  code { color:#ff9a1a; }
+  .muted { color:#888; font-size:13px; }
+</style>
+</head>
+<body>
+  <h1>SHAPE &middot; NGC 6905</h1>
+  <p class="sub">SHAPE-style 3D morpho-kinematic model of the planetary nebula NGC 6905 (the "Blue Flash Nebula")</p>
+
+  <div class="card big">
+    🔭 <a href="outputs/phase7_interactive_3d.html"><b>Open the interactive 3D model</b></a>
+    &nbsp;— rotate/zoom; toggle particles, line-of-sight velocity, mesh, velocity arrows.
+  </div>
+
+  <div class="card">
+    <b>Animations</b><br>
+    • <a href="outputs/phase7_rotation.gif">360° rotation</a><br>
+    • <a href="outputs/phase7_expansion.gif">Expansion time-lapse</a> (each component starts at its own ejection time)
+  </div>
+
+  <div class="card">
+    <b>Science</b><br>
+    • <a href="outputs/summary.md">Full summary</a> (model, real-image comparison, ages, references)<br>
+    • <a href="outputs/phase4_real_vs_synthetic.png">Real Pan-STARRS vs synthetic</a><br>
+    • <a href="outputs/phase6_age_distributions.png">Kinematic age distributions</a>
+    &nbsp;— shell ~5.4 kyr (youngest) vs lobes/knots ~16–18 kyr<br>
+    • <a href="outputs/phase4_channel_maps.png">Velocity channel maps</a>
+  </div>
+
+  <div class="card">
+    <b>3D files</b> (GitHub renders these in-browser):
+    <a href="https://github.com/tanishag08/ngc6905-morpho-kinematic-model/blob/main/outputs/ngc6905_combined.stl">STL</a> ·
+    <a href="https://github.com/tanishag08/ngc6905-morpho-kinematic-model/blob/main/outputs/ngc6905.glb">GLB (AR)</a>
+  </div>
+
+  <p class="muted">Source &amp; full pipeline:
+    <a href="https://github.com/tanishag08/ngc6905-morpho-kinematic-model">github.com/tanishag08/ngc6905-morpho-kinematic-model</a>.
+    The interactive SHAPE editor (<code>editor.py</code>) runs locally:
+    <code>python editor.py</code> → <code>http://127.0.0.1:8050</code>.</p>
+</body>
+</html>
