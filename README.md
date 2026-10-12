@@ -23,6 +23,7 @@ Requires Python 3.11+ (developed on 3.13).
 
 ```bash
 python main.py phase1      # build the analytic grid model + first observables
+python main.py phase2      # run the 7 validation tests (writes outputs/phase2_*.png)
 ```
 
 All figures and tables are written to `outputs/`.
@@ -64,4 +65,5 @@ velocities, opening angle, thicknesses, knot size) are tagged `[ASSUMPTION]`.
 ## Status
 
 - **Phase 1 — grid model & first renders:** complete.
-- Phases 2–8: pending.
+- **Phase 2 — validation tests:** complete (7/7 pass).
+- Phases 3–8: pending.

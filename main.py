@@ -81,7 +81,13 @@ def run_phase1(config=None):
     return model
 
 
-PHASES = {"phase1": run_phase1}
+def run_phase2(config=None):
+    """Phase 2: run the validation test suite."""
+    import tests
+    return tests.run_all()
+
+
+PHASES = {"phase1": run_phase1, "phase2": run_phase2}
 
 
 if __name__ == "__main__":
