@@ -239,6 +239,54 @@ def load_wfpc_waiver(path, ra_deg=None, dec_deg=None, half_arcsec=40.0, out_n=80
     return mosaic, half_arcsec, meta
 
 
+def load_ps1_stack(path, ra_deg=None, dec_deg=None, half_arcsec=50.0, out_n=400):
+    """Load a Pan-STARRS1 skycell stack FITS and align a cutout to the model grid.
+
+    PS1 '.stk.<band>.unconv.fits' stacks are large (~6000^2) at 0.25"/pix with a
+    standard TAN WCS (image usually in HDU 1). We resample a square arcsec cutout
+    centred on (ra,dec), north-up / east-left, matching the synthetic images.
+    g-band contains [O III]+Hbeta, r-band contains Halpha+[N II] -- both show the
+    nebula (unlike the HST F785LP image). Returns (image, half, meta).
+    """
+    from astropy.io import fits
+    from astropy.wcs import WCS
+    if ra_deg is None or dec_deg is None:
+        ra_deg, dec_deg, _ = get_target_coordinates()
+    with fits.open(path) as h:
+        hdu = h[1] if (len(h) > 1 and h[1].data is not None) else h[0]
+        wcs = WCS(hdu.header)
+        data = np.asarray(hdu.data, dtype=float)
+    off = np.linspace(-half_arcsec, half_arcsec, out_n)
+    east, north = np.meshgrid(off, off)
+    cosd = np.cos(np.deg2rad(dec_deg))
+    ra = ra_deg - (east / 3600.0) / cosd
+    dec = dec_deg + north / 3600.0
+    px, py = wcs.world_to_pixel_values(ra, dec)
+    px = np.round(px).astype(int); py = np.round(py).astype(int)
+    valid = (px >= 0) & (px < data.shape[1]) & (py >= 0) & (py < data.shape[0])
+    out = np.full((out_n, out_n), np.nan)
+    out[valid] = data[py[valid], px[valid]]
+    band = "?"
+    if ".stk." in path:
+        band = path.split(".stk.")[1].split(".")[0]
+    return out, half_arcsec, {"survey": f"Pan-STARRS1 {band}", "ok": True,
+                              "coverage_frac": float(np.isfinite(out).mean())}
+
+
+def suppress_stars(img, opening_size=9, smooth=2.0):
+    """Remove compact field stars from an extended-nebula image.
+
+    Grey-scale morphological opening with a structuring element larger than the
+    stellar PSF removes point sources while preserving the extended nebula; we
+    then subtract the sky and lightly smooth. Useful before image fitting.
+    """
+    from scipy.ndimage import grey_opening, gaussian_filter
+    filled = np.nan_to_num(img, nan=np.nanmedian(img))
+    opened = grey_opening(filled, size=opening_size)
+    neb = np.clip(opened - np.nanmedian(opened), 0, None)
+    return gaussian_filter(neb, smooth)
+
+
 def save_comparison(real_img, synth_img, half, save_path,
                     title="Real vs synthetic"):
     """Side-by-side real/synthetic plus a difference image (all normalised)."""
