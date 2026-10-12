@@ -1,0 +1,13 @@
+# Pinned package versions for the NGC 6905 morpho-kinematic model.
+# Install with:  pip install -r requirements.txt
+numpy==2.3.0
+scipy==1.15.3
+matplotlib==3.10.3
+astropy==7.1.0
+astroquery==0.4.10
+plotly==7.1.0
+trimesh==5.1.1
+imageio==2.38.1
+dash==4.4.1
+# pandas is used for the kinematic-age table (Phase 6).
+pandas
