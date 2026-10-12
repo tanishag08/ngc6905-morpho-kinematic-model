@@ -190,6 +190,55 @@ def load_fits_image(path, ra_deg=None, dec_deg=None, half_arcsec=50.0):
     return aligned, half_arcsec, {"survey": os.path.basename(path), "ok": True}
 
 
+def load_wfpc_waiver(path, ra_deg=None, dec_deg=None, half_arcsec=40.0, out_n=800):
+    """Load an HST WFPC/WFPC2 'waiver' FITS (c0f) and mosaic its 4 chips.
+
+    A waiver c0f stores the 4 CCD images as a (4, ny, nx) cube in the primary
+    HDU, with per-group WCS (CRVAL/CRPIX/CD) in the table HDU. We build a WCS per
+    chip and resample all four onto a square arcsec grid centred on (ra,dec),
+    north-up / east-left, filling the characteristic rosette (chips meet near the
+    field centre). Returns (mosaic, half, meta).
+
+    NOTE for NGC 6905: the only HST image found was WFPC1 F785LP (red long-pass),
+    in which the nebular emission lines are not captured -- so the nebula is
+    essentially undetected. This loader is kept for reproducibility / future
+    narrowband WFPC2 data.
+    """
+    from astropy.io import fits
+    from astropy.wcs import WCS
+    if ra_deg is None or dec_deg is None:
+        ra_deg, dec_deg, _ = get_target_coordinates()
+    with fits.open(path) as h:
+        data = np.asarray(h[0].data, dtype=float)      # (ngroup, ny, nx)
+        tab = h[1].data
+    ngroup = data.shape[0]
+
+    def chip_wcs(i):
+        w = WCS(naxis=2)
+        w.wcs.crval = [tab["CRVAL1"][i], tab["CRVAL2"][i]]
+        w.wcs.crpix = [tab["CRPIX1"][i], tab["CRPIX2"][i]]
+        w.wcs.cd = [[tab["CD1_1"][i], tab["CD1_2"][i]],
+                    [tab["CD2_1"][i], tab["CD2_2"][i]]]
+        w.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+        return w
+
+    off = np.linspace(-half_arcsec, half_arcsec, out_n)
+    east, north = np.meshgrid(off, off)
+    cosd = np.cos(np.deg2rad(dec_deg))
+    ra = ra_deg - (east / 3600.0) / cosd
+    dec = dec_deg + north / 3600.0
+    ny, nx = data.shape[1], data.shape[2]
+    mosaic = np.full((out_n, out_n), np.nan)
+    for i in range(ngroup):
+        px, py = chip_wcs(i).world_to_pixel_values(ra, dec)
+        px = np.round(px).astype(int); py = np.round(py).astype(int)
+        v = (px >= 0) & (px < nx) & (py >= 0) & (py < ny) & ~np.isfinite(mosaic)
+        mosaic[v] = data[i][py[v], px[v]]
+    meta = {"survey": "HST WFPC F785LP (waiver c0f)", "ok": True,
+            "coverage_frac": float(np.isfinite(mosaic).mean())}
+    return mosaic, half_arcsec, meta
+
+
 def save_comparison(real_img, synth_img, half, save_path,
                     title="Real vs synthetic"):
     """Side-by-side real/synthetic plus a difference image (all normalised)."""
