@@ -25,6 +25,18 @@ Requires Python 3.11+ (developed on 3.13).
 python main.py phase1      # build the analytic grid model + first observables
 python main.py phase2      # run the 7 validation tests (writes outputs/phase2_*.png)
 python main.py phase3      # mesh + particle model + modifier demo + cross-check
+python main.py phase4      # synthetic obs (seeing, channels, composite) + real image + fit
+```
+
+### Supplying a real image yourself
+
+Phase 4 tries to download a DSS/Pan-STARRS cutout via SkyView. If that fails
+(no network, or SkyView is slow — each survey is time-bounded so it never
+hangs), supply a local FITS instead:
+
+```python
+import observations as obs
+real, half, meta = obs.load_fits_image("my_ngc6905.fits")   # aligned to the model grid
 ```
 
 All figures and tables are written to `outputs/`.
@@ -55,10 +67,11 @@ See `outputs/phase1_conventions.png` for the labelled diagram.
 | `modifiers.py` | stackable SHAPE modifiers (squash, twist, bump, taper, density falloff) |
 | `particles.py` | particle sampling, velocities, model builder |
 | `tests.py` | Phase 2 validation + Phase 3 particle cross-check |
+| `observations.py` | download/align a real image (SkyView/SIMBAD) or load a FITS |
+| `fitting.py` | image-based geometry fitting (scipy.optimize) |
 | `main.py` | phase driver |
 
-(Phases 4–8 add `observations.py`, `fitting.py`, `ages.py`, `viz3d.py`,
-`export3d.py`, `editor.py`.)
+(Phases 5–8 add `ages.py`, `viz3d.py`, `export3d.py`, `editor.py`.)
 
 ## Assumptions vs published values
 
@@ -72,4 +85,9 @@ velocities, opening angle, thicknesses, knot size) are tagged `[ASSUMPTION]`.
 - **Phase 1 — grid model & first renders:** complete.
 - **Phase 2 — validation tests:** complete (7/7 pass).
 - **Phase 3 — mesh + particle model:** complete (5/5 cross-checks; grid↔particle image corr 0.994).
-- Phases 4–8: pending.
+- **Phase 4 — synthetic obs + real image + fitting:** complete. Synthetic image
+  (seeing), colour composite, instrumentally-smoothed P-V, channel maps, and an
+  image fitter (self-consistency corr 0.999) all work. The real-image download
+  depends on SkyView being reachable; it is time-bounded and degrades to a FITS
+  fallback. Image fitting constrains geometry only — **not** velocities/ages.
+- Phases 5–8: pending.

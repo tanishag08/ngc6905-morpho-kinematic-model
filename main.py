@@ -174,7 +174,112 @@ def run_phase3(config=None):
     return pm
 
 
-PHASES = {"phase1": run_phase1, "phase2": run_phase2, "phase3": run_phase3}
+def _plot_fit_demo(out, true_params, target, half, save_path):
+    """Show the self-consistency fit: target, best-fit model, difference."""
+    import matplotlib.pyplot as plt
+    import fitting
+    best = [out["best"][n] for n in fitting.PARAM_NAMES]
+    model = fitting.model_image(best, cfg.DEFAULT, half, n_particles=150000)
+
+    def norm(a):
+        a = np.nan_to_num(a); return a / a.max() if a.max() > 0 else a
+    t, m = norm(target), norm(model)
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    for ax, img, ttl, cmap in [(axes[0], t, "injected target", "inferno"),
+                               (axes[1], m, "best-fit model", "inferno"),
+                               (axes[2], m - t, "model - target", "coolwarm")]:
+        im = ax.imshow(img, origin="lower", extent=[-half, half, -half, half],
+                       cmap=cmap, vmin=(-1 if cmap == "coolwarm" else 0), vmax=1)
+        ax.invert_xaxis(); ax.set_xlabel("E (arcsec)"); ax.set_ylabel("N (arcsec)")
+        ax.set_title(ttl); fig.colorbar(im, ax=ax, fraction=0.046)
+    fig.suptitle("Phase 4 fit self-consistency (image-only; velocities not fitted)",
+                 fontweight="bold")
+    fig.tight_layout(); fig.savefig(save_path, dpi=130); plt.close(fig)
+    return save_path
+
+
+def run_phase4(config=None):
+    """Phase 4: realistic synthetic obs, real image, and image-based fitting."""
+    import fitting
+    import observations as obs
+    from particles import build_particle_model
+    from render import (plot_synthetic_image, plot_composite_image,
+                        plot_channel_maps, plot_synthetic_pv, synthetic_image)
+
+    if config is None:
+        config = cfg.DEFAULT
+    np.random.seed(config.seed)
+    out = config.outputs_dir
+    print("=" * 70)
+    print("PHASE 4: synthetic observations, real image, and fitting")
+    print("=" * 70)
+
+    pm = build_particle_model(config)
+
+    # 1) Realistic synthetic outputs.
+    p = plot_synthetic_image(pm, f"{out}/phase4_synthetic_image.png")
+    print(f"[saved] synthetic image (seeing) -> {p}")
+    p = plot_composite_image(pm, f"{out}/phase4_composite.png")
+    print(f"[saved] colour composite -> {p}")
+    pa_major = config.render.pv_slit_pa_major_deg
+    pa_minor = config.render.pv_slit_pa_minor_deg
+    plot_synthetic_pv(pm, pa_major, f"{out}/phase4_pv_major.png",
+                      title=f"Synthetic P-V major axis (PA {pa_major:.0f}°, smoothed)")
+    plot_synthetic_pv(pm, pa_minor, f"{out}/phase4_pv_minor.png",
+                      title=f"Synthetic P-V minor axis (PA {pa_minor:.0f}°, smoothed)")
+    print(f"[saved] smoothed P-V diagrams (PA {pa_major:.0f}°, {pa_minor:.0f}°)")
+    p = plot_channel_maps(pm, f"{out}/phase4_channel_maps.png")
+    print(f"[saved] channel maps -> {p}")
+
+    # 2) Real image: download + align + compare (graceful on failure).
+    print("\nAttempting real image download (SIMBAD + SkyView)...")
+    real, half, meta = obs.get_real_image(half_arcsec=config.grid.half_size_arcsec,
+                                          per_survey_timeout_s=25)
+    print(f"  coords: {meta['coord_source']} "
+          f"(RA={meta['ra_deg']:.4f}, Dec={meta['dec_deg']:.4f})")
+    print(f"  {meta['message']}")
+    if real is not None:
+        synth, _ = synthetic_image(pm, fov_arcsec=2 * half)
+        p = obs.save_comparison(real, synth, half, f"{out}/phase4_real_vs_synthetic.png",
+                                title=f"NGC 6905: real ({meta['survey']}) vs synthetic")
+        print(f"[saved] real vs synthetic + difference -> {p}")
+        # Fit to the real image too.
+        print("\nFitting geometry to the REAL image...")
+        rres = fitting.fit_image(real, half, base_config=config, verbose=True)
+        import json
+        with open(f"{out}/phase4_realfit_params.json", "w") as f:
+            json.dump({"best": rres["best"], "start": rres["start"],
+                       "best_loss": rres["best_loss"]}, f, indent=2)
+        print(f"[saved] real-image best-fit -> {out}/phase4_realfit_params.json")
+    else:
+        print("  -> Skipping real-vs-synthetic and real fit. "
+              "Supply a FITS via observations.load_fits_image(path).")
+
+    # 3) Fitting self-consistency demo (always runs; no network needed).
+    print("\nFit self-consistency demo (inject known params, recover from image):")
+    sres, true_params, target, dhalf = fitting.self_consistency_demo(config)
+    print(f"  {'param':24s}{'true':>8s}{'best':>8s}{'err':>8s}")
+    for n in fitting.PARAM_NAMES:
+        print(f"  {n:24s}{sres['true'][n]:8.2f}{sres['best'][n]:8.2f}"
+              f"{sres['best'][n]-sres['true'][n]:+8.2f}")
+    print(f"  image match: loss {sres['start_loss']:.4f} -> {sres['best_loss']:.4f} "
+          f"(corr {1-sres['best_loss']:.4f})")
+    # Demonstrate the inclination-length degeneracy explicitly.
+    import numpy as _np
+    proj_true = true_params[3] * _np.cos(_np.deg2rad(true_params[0]))
+    proj_best = sres['best']['lobe_length_arcsec'] * _np.cos(_np.deg2rad(sres['best']['inclination_deg']))
+    print(f"  projected lobe length (length*cos i): true={proj_true:.1f}″, "
+          f"best={proj_best:.1f}″  -> same projection (image degeneracy)")
+    p = _plot_fit_demo(sres, true_params, target, dhalf, f"{out}/phase4_fit_demo.png")
+    print(f"[saved] fit demo figure -> {p}")
+    print("\nNOTE: image fitting constrains GEOMETRY only; it cannot constrain")
+    print("      expansion velocities or kinematic ages (no velocity info in an image).")
+    print("\nPhase 4 complete.")
+    return pm
+
+
+PHASES = {"phase1": run_phase1, "phase2": run_phase2, "phase3": run_phase3,
+          "phase4": run_phase4}
 
 
 if __name__ == "__main__":
