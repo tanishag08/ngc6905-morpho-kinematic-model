@@ -29,6 +29,7 @@ python main.py phase4      # synthetic obs (seeing, channels, composite) + real 
 python main.py phase5      # self-test the interactive editor
 python editor.py           # launch the browser editor at http://127.0.0.1:8050
 python main.py phase6      # kinematic ages + Monte Carlo + ejection history
+python main.py phase7      # interactive 3D HTML + rotation GIF + expansion GIF
 ```
 
 ### Supplying a real image yourself
@@ -74,9 +75,10 @@ See `outputs/phase1_conventions.png` for the labelled diagram.
 | `fitting.py` | image-based geometry fitting (scipy.optimize) |
 | `editor.py` | interactive browser editor (Plotly Dash) |
 | `ages.py` | kinematic ages, Monte Carlo, ejection history |
+| `viz3d.py` | interactive 3D HTML + rotation/expansion GIFs |
 | `main.py` | phase driver |
 
-(Phases 7–8 add `viz3d.py`, `export3d.py`.)
+(Phase 8 adds `export3d.py`.)
 
 ## Assumptions vs published values
 
@@ -105,4 +107,8 @@ velocities, opening angle, thicknesses, knot size) are tagged `[ASSUMPTION]`.
   distribution plot, CSV table, and interpretation. Shell is clearly the
   youngest (P≈0.98–0.99); lobes vs knots indistinguishable. Big caveats:
   assumed velocities + 1/cos i deprojection → P-V spectroscopy needed.
-- Phases 7–8: pending.
+- **Phase 7 — 3D visualization:** complete. Standalone interactive Plotly HTML
+  (toggles: particles by component / by v_los, mesh surfaces, velocity arrows;
+  LOS arrow + AU scale bar), a 360° rotation GIF, and a homologous expansion
+  time-lapse GIF (each component starts at its own ejection time).
+- Phase 8: pending.

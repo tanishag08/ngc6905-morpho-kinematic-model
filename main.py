@@ -298,8 +298,19 @@ def run_phase6(config=None):
     print("\nPhase 6 complete.")
 
 
+def run_phase7(config=None):
+    """Phase 7: interactive 3D HTML, rotation GIF, expansion time-lapse GIF."""
+    import viz3d
+    print("=" * 70)
+    print("PHASE 7: 3D visualization and animations")
+    print("=" * 70)
+    viz3d.run(config)
+    print("\nPhase 7 complete.")
+
+
 PHASES = {"phase1": run_phase1, "phase2": run_phase2, "phase3": run_phase3,
-          "phase4": run_phase4, "phase5": run_phase5, "phase6": run_phase6}
+          "phase4": run_phase4, "phase5": run_phase5, "phase6": run_phase6,
+          "phase7": run_phase7}
 
 
 if __name__ == "__main__":
