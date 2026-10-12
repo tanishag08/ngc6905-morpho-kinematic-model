@@ -308,9 +308,26 @@ def run_phase7(config=None):
     print("\nPhase 7 complete.")
 
 
+def run_phase8(config=None):
+    """Phase 8: export the 3D model to .glb / .obj / .stl and verify load-back."""
+    import export3d
+    print("=" * 70)
+    print("PHASE 8: 3D model export")
+    print("=" * 70)
+    export3d.run(config)
+    print("\nPhase 8 complete.")
+
+
+def run_all(config=None):
+    """Run the full non-interactive pipeline end to end."""
+    for name in ["phase1", "phase2", "phase3", "phase4", "phase5",
+                 "phase6", "phase7", "phase8"]:
+        PHASES[name](config)
+
+
 PHASES = {"phase1": run_phase1, "phase2": run_phase2, "phase3": run_phase3,
           "phase4": run_phase4, "phase5": run_phase5, "phase6": run_phase6,
-          "phase7": run_phase7}
+          "phase7": run_phase7, "phase8": run_phase8, "all": run_all}
 
 
 if __name__ == "__main__":
