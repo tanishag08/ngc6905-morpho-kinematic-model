@@ -337,6 +337,179 @@ ALL_TESTS = [
 ]
 
 
+CORR_MIN = 0.90              # minimum correlation between grid and particle renders
+
+
+# ===========================================================================
+# PHASE 3 cross-check: particle version reproduces the grid version
+# ===========================================================================
+def ptest_1_shell_ellipse():
+    """Particle spherical shell -> P-V ellipse (same criterion as grid T1)."""
+    from particles import build_particle_model
+    R, t, v_exp = 25.0, 2.0, 45.0
+    shell = replace(cfg.ShellParams(), semi_axes_arcsec=(R, R, R), thickness_arcsec=t,
+                    expansion_velocity_kms=v_exp, v_char_radius_arcsec=R)
+    conf = replace(cfg.DEFAULT, shell=shell,
+                   lobe=replace(cfg.LobeParams(), emissivity=0.0),
+                   knot=replace(cfg.KnotParams(), emissivity=0.0))
+    pm = build_particle_model(conf, match_grid_flux=False)
+    ps = pm["components"][ID_SHELL]
+    x, y, z = ps.positions[:, 0], ps.positions[:, 1], ps.positions[:, 2]
+    sel = np.abs(x) <= 1.5                         # narrow slit at PA=0 (perp=x)
+    p = y[sel]; v = ps.v_los[sel]
+    v_at_center = np.max(np.abs(v[np.abs(p) < 2.0]))
+    p_at_vzero = np.max(np.abs(p[np.abs(v) < 3.0]))
+    passed = (abs(v_at_center - v_exp) <= 3.0) and (abs(p_at_vzero - R) <= ELLIPSE_TOL_ARCSEC)
+
+    fig, ax = plt.subplots(figsize=(6, 5.5))
+    ax.scatter(p, v, s=3, alpha=0.3, color="tab:orange", label="shell particles")
+    th = np.linspace(0, 2 * np.pi, 300)
+    ax.plot(R * np.cos(th), v_exp * np.sin(th), "b-", lw=1.5, label="ideal ellipse")
+    ax.set_xlabel("position along slit (arcsec)"); ax.set_ylabel("v_los (km/s)")
+    ax.set_title("P-T1: PARTICLE spherical shell -> ellipse"); ax.legend(fontsize=8)
+    fig.tight_layout(); fig.savefig(f"{OUT}/phase3_ptest1_shell_ellipse.png", dpi=130); plt.close(fig)
+    return ("P-T1 particle shell -> ellipse", passed,
+            f"v-axis={v_at_center:.1f} (exp 45), p-axis={p_at_vzero:.1f} (exp 25)")
+
+
+def ptest_3_lobes_i0():
+    """Particle lobes at i=0 -> v_los symmetric about zero."""
+    from particles import sample_lobes
+    lobe = cfg.LobeParams()
+    H = hubble_constant(lobe.tip_velocity_kms, lobe.v_char_radius_arcsec)
+    rng = np.random.default_rng(cfg.DEFAULT.seed)
+    pts = sample_lobes(lobe, 60000, rng)
+    sky = body_to_sky(pts, inclination_deg=0.0, position_angle_deg=160.0)
+    v = H * sky[:, 2]
+    mean_v, scale = v.mean(), np.mean(np.abs(v))
+    passed = abs(mean_v) / scale <= SYMM_MEAN_TOL
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    ax.hist(v, bins=60, color="tab:purple", alpha=0.8); ax.axvline(0, color="k")
+    ax.set_title(f"P-T3: PARTICLE lobes i=0 (mean={mean_v:.3f} km/s)")
+    ax.set_xlabel("v_los (km/s)")
+    fig.tight_layout(); fig.savefig(f"{OUT}/phase3_ptest3_lobes_i0.png", dpi=130); plt.close(fig)
+    return ("P-T3 particle lobes i=0", passed, f"mean v_los={mean_v:.3f} km/s (scale {scale:.1f})")
+
+
+def ptest_4_lobes_i90():
+    """Particle lobes at i=90 -> overlap on sky, split in velocity."""
+    from particles import sample_lobes
+    lobe = cfg.LobeParams()
+    H = hubble_constant(lobe.tip_velocity_kms, lobe.v_char_radius_arcsec)
+    rng = np.random.default_rng(cfg.DEFAULT.seed)
+    # sample_lobes assigns lobe sign internally; recover it from body-y sign.
+    pts = sample_lobes(lobe, 60000, rng)
+    north = pts[:, 1] > 0
+    sky = body_to_sky(pts, inclination_deg=90.0, position_angle_deg=0.0)
+    v = H * sky[:, 2]
+    ext = np.max(np.abs(sky[:, :2])) * 1.05
+    bins = np.linspace(-ext, ext, 60)
+    hn, _, _ = np.histogram2d(sky[north, 0], sky[north, 1], bins=[bins, bins])
+    hs, _, _ = np.histogram2d(sky[~north, 0], sky[~north, 1], bins=[bins, bins])
+    overlap = np.logical_and(hn > 0, hs > 0).sum() / np.logical_or(hn > 0, hs > 0).sum()
+    v_sep = v[north].min() - v[~north].max()
+    passed = (overlap >= OVERLAP_MIN) and (v_sep > 0)
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4.6))
+    a1.scatter(sky[north, 0], sky[north, 1], s=2, alpha=0.3, color="red")
+    a1.scatter(sky[~north, 0], sky[~north, 1], s=2, alpha=0.3, color="blue")
+    a1.invert_xaxis(); a1.set_aspect("equal"); a1.set_title(f"sky overlap={overlap:.2f}")
+    a2.hist(v[north], bins=40, color="red", alpha=0.6)
+    a2.hist(v[~north], bins=40, color="blue", alpha=0.6); a2.axvline(0, color="k")
+    a2.set_title(f"velocity split (gap={v_sep:.1f})"); a2.set_xlabel("v_los (km/s)")
+    fig.suptitle("P-T4: PARTICLE lobes at i=90°", fontweight="bold")
+    fig.tight_layout(); fig.savefig(f"{OUT}/phase3_ptest4_lobes_i90.png", dpi=130); plt.close(fig)
+    return ("P-T4 particle lobes i=90", passed, f"overlap={overlap:.2f}, gap={v_sep:.1f} km/s")
+
+
+def ptest_5_flux_conservation():
+    """Particle flux is exactly conserved under rotation (count/weights invariant)."""
+    from particles import build_particle_model
+    totals = []
+    half = cfg.DEFAULT.grid.half_size_arcsec
+    for (i, pa) in [(0, 0), (30, 45), (60, 160), (90, 90), (45, 270)]:
+        pm = build_particle_model(cfg.DEFAULT, inclination_deg=i, position_angle_deg=pa,
+                                  n_per_component=50000, match_grid_flux=False)
+        pts = pm["particles"].positions
+        w = pm["particles"].weights
+        infov = (np.abs(pts[:, 0]) <= half) & (np.abs(pts[:, 1]) <= half)
+        totals.append(w[infov].sum())
+    totals = np.array(totals)
+    spread = (totals.max() - totals.min()) / totals.mean()
+    passed = spread <= FLUX_TOL
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    ax.bar(range(5), totals, color="tab:cyan", edgecolor="k")
+    ax.set_ylim(totals.mean() * 0.99, totals.mean() * 1.01)
+    ax.set_title(f"P-T5: PARTICLE flux conservation (spread={spread*100:.3f}%)")
+    ax.set_ylabel("total weight in FOV")
+    fig.tight_layout(); fig.savefig(f"{OUT}/phase3_ptest5_flux.png", dpi=130); plt.close(fig)
+    return ("P-T5 particle flux conservation", passed, f"spread={spread*100:.3f}% (tol {FLUX_TOL*100:.0f}%)")
+
+
+def ptest_6_grid_vs_particle():
+    """Grid vs particle renders of the DEFAULT model must agree (correlation)."""
+    from particles import build_particle_model
+    from render import pv_diagram, particle_pv_diagram, sky_image, particle_sky_image
+    gm = build_model(cfg.DEFAULT)
+    pm = build_particle_model(cfg.DEFAULT, match_grid_flux=True)
+
+    pa = cfg.DEFAULT.render.pv_slit_pa_major_deg
+    pv_g, pe, ve = pv_diagram(gm, pa)
+    pv_p, _, _ = particle_pv_diagram(pm, pa)
+    img_g, half = sky_image(gm)
+    img_p, _ = particle_sky_image(pm)
+
+    from scipy.ndimage import gaussian_filter
+
+    def corr(a, b, smooth=0.0):
+        # Compare the underlying distributions: a light smoothing removes the
+        # particle Poisson noise in the thin slit so we are not penalised for
+        # sub-pixel placement of thin features (grid also discretises).
+        if smooth > 0:
+            a = gaussian_filter(a, smooth)
+            b = gaussian_filter(b, smooth)
+        return float(np.corrcoef(a.ravel(), b.ravel())[0, 1])
+    # The sky image is well sampled -> compare directly. The thin-slit P-V is
+    # sparse for particles -> compare with a 1.5-pixel smoothing.
+    c_img = corr(img_g, img_p, smooth=0.0)
+    c_pv = corr(pv_g, pv_p, smooth=1.5)
+    passed = (c_pv >= CORR_MIN) and (c_img >= CORR_MIN)
+
+    fig, axs = plt.subplots(2, 2, figsize=(11, 10))
+    for ax, data, ttl in [(axs[0, 0], img_g, "GRID sky image"),
+                          (axs[0, 1], img_p, "PARTICLE sky image")]:
+        ax.imshow(data, origin="lower", extent=[-half, half, -half, half], cmap="inferno")
+        ax.invert_xaxis(); ax.set_title(ttl); ax.set_xlabel("E (arcsec)"); ax.set_ylabel("N (arcsec)")
+    for ax, data, ttl in [(axs[1, 0], pv_g, f"GRID P-V (PA {pa:.0f}°)"),
+                          (axs[1, 1], pv_p, f"PARTICLE P-V (PA {pa:.0f}°)")]:
+        ax.imshow(data, origin="lower", aspect="auto", cmap="inferno",
+                  extent=[pe[0], pe[-1], ve[0], ve[-1]])
+        ax.set_title(ttl); ax.set_xlabel("position (arcsec)"); ax.set_ylabel("v_los (km/s)")
+    fig.suptitle(f"P-T6: grid vs particle  (image corr={c_img:.3f}, P-V corr={c_pv:.3f})",
+                 fontweight="bold")
+    fig.tight_layout(); fig.savefig(f"{OUT}/phase3_ptest6_grid_vs_particle.png", dpi=130); plt.close(fig)
+    return ("P-T6 grid vs particle", passed, f"image corr={c_img:.3f}, P-V corr={c_pv:.3f} (min {CORR_MIN})")
+
+
+PARTICLE_TESTS = [ptest_1_shell_ellipse, ptest_3_lobes_i0, ptest_4_lobes_i90,
+                  ptest_5_flux_conservation, ptest_6_grid_vs_particle]
+
+
+def run_particle_crosscheck():
+    os.makedirs(OUT, exist_ok=True)
+    print("=" * 70)
+    print("PHASE 3 cross-check: particle model vs grid model")
+    print("=" * 70)
+    results = []
+    for fn in PARTICLE_TESTS:
+        name, passed, msg = fn()
+        results.append((name, passed, msg))
+        print(f"  [{'PASS' if passed else 'FAIL'}] {name:30s} | {msg}")
+    n_pass = sum(1 for _, p, _ in results if p)
+    print("-" * 70)
+    print(f"  {n_pass}/{len(results)} particle cross-checks passed.")
+    return results
+
+
 def run_all():
     os.makedirs(OUT, exist_ok=True)
     print("=" * 70)

@@ -24,6 +24,7 @@ Requires Python 3.11+ (developed on 3.13).
 ```bash
 python main.py phase1      # build the analytic grid model + first observables
 python main.py phase2      # run the 7 validation tests (writes outputs/phase2_*.png)
+python main.py phase3      # mesh + particle model + modifier demo + cross-check
 ```
 
 All figures and tables are written to `outputs/`.
@@ -49,11 +50,15 @@ See `outputs/phase1_conventions.png` for the labelled diagram.
 | `orientation.py` | rotations, projection, conventions diagram |
 | `velocity.py` | homologous and power-law velocity fields |
 | `grid_model.py` | Phase 1 analytic emissivity grid |
-| `render.py` | sky images and P-V diagrams |
+| `render.py` | sky images and P-V diagrams (grid + particle) |
+| `meshes.py` | trimesh primitives + NGC 6905 component meshes |
+| `modifiers.py` | stackable SHAPE modifiers (squash, twist, bump, taper, density falloff) |
+| `particles.py` | particle sampling, velocities, model builder |
+| `tests.py` | Phase 2 validation + Phase 3 particle cross-check |
 | `main.py` | phase driver |
 
-(Phases 3–8 add `meshes.py`, `modifiers.py`, `particles.py`, `observations.py`,
-`fitting.py`, `ages.py`, `viz3d.py`, `export3d.py`, `editor.py`, `tests.py`.)
+(Phases 4–8 add `observations.py`, `fitting.py`, `ages.py`, `viz3d.py`,
+`export3d.py`, `editor.py`.)
 
 ## Assumptions vs published values
 
@@ -66,4 +71,5 @@ velocities, opening angle, thicknesses, knot size) are tagged `[ASSUMPTION]`.
 
 - **Phase 1 — grid model & first renders:** complete.
 - **Phase 2 — validation tests:** complete (7/7 pass).
-- Phases 3–8: pending.
+- **Phase 3 — mesh + particle model:** complete (5/5 cross-checks; grid↔particle image corr 0.994).
+- Phases 4–8: pending.

@@ -18,6 +18,92 @@ import matplotlib.pyplot as plt
 
 import config as cfg
 
+# ---------------------------------------------------------------------------
+# Particle rendering (Phase 3). These mirror the grid renderers above but take
+# a particle-model dict (from particles.build_particle_model) and bin the
+# particle cloud directly. Same conventions: north up, east left; v_los = v_z.
+# ---------------------------------------------------------------------------
+
+
+def particle_sky_image(pmodel, n_bins=None):
+    """Bin a particle cloud into a sky image (sum of emissivity per pixel).
+
+    Returns (image, half) with image shape (ny, nx), row=north(y), col=east(x).
+    """
+    conf = pmodel["config"]
+    half = conf.grid.half_size_arcsec
+    if n_bins is None:
+        n_bins = conf.grid.n
+    pts = pmodel["particles"].positions
+    w = pmodel["particles"].weights
+    edges = np.linspace(-half, half, n_bins + 1)
+    # histogram2d with x=east along axis0, y=north along axis1, then transpose
+    # so rows=north, cols=east (matching the grid sky_image convention).
+    H2, _, _ = np.histogram2d(pts[:, 0], pts[:, 1], bins=[edges, edges], weights=w)
+    return H2.T, half
+
+
+def particle_pv_diagram(pmodel, pa_deg, slit_width_arcsec=None, n_pos_bins=140):
+    """Long-slit P-V diagram from a particle cloud.
+
+    Returns (pv, pos_edges, vel_edges), pv shape (n_vel, n_pos).
+    """
+    conf = pmodel["config"]
+    if slit_width_arcsec is None:
+        slit_width_arcsec = conf.render.pv_slit_width_arcsec
+    ps = pmodel["particles"]
+    x, y = ps.positions[:, 0], ps.positions[:, 1]
+    pos, perp = _slit_coordinates(x, y, pa_deg)
+    in_slit = np.abs(perp) <= slit_width_arcsec / 2.0
+
+    half = conf.grid.half_size_arcsec
+    pos_edges = np.linspace(-half, half, n_pos_bins + 1)
+    vel_edges = np.arange(conf.render.pv_v_min_kms,
+                          conf.render.pv_v_max_kms + conf.render.pv_v_bin_kms,
+                          conf.render.pv_v_bin_kms)
+    pv, _, _ = np.histogram2d(ps.v_los[in_slit], pos[in_slit],
+                              bins=[vel_edges, pos_edges], weights=ps.weights[in_slit])
+    return pv, pos_edges, vel_edges
+
+
+def plot_particle_sky_image(pmodel, save_path, title="Particle sky image"):
+    image, half = particle_sky_image(pmodel)
+    fig, ax = plt.subplots(figsize=(6.5, 6))
+    im = ax.imshow(image, origin="lower", extent=[-half, half, -half, half], cmap="inferno")
+    ax.invert_xaxis()
+    ax.set_xlabel("east offset (arcsec)  [east is left]")
+    ax.set_ylabel("north offset (arcsec)")
+    ax.set_title(title)
+    ax.text(0.02, 0.98, f"i = {pmodel['inclination_deg']:.0f}°, "
+            f"PA = {pmodel['position_angle_deg']:.0f}°", transform=ax.transAxes,
+            va="top", color="white", fontsize=9)
+    fig.colorbar(im, ax=ax, label="integrated emissivity (arb.)")
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    fig.savefig(save_path, dpi=130)
+    plt.close(fig)
+    return save_path
+
+
+def plot_particle_pv(pmodel, pa_deg, save_path, title=None, slit_width_arcsec=None):
+    pv, pos_edges, vel_edges = particle_pv_diagram(pmodel, pa_deg, slit_width_arcsec)
+    if title is None:
+        title = f"Particle P-V diagram, slit PA = {pa_deg:.0f}°"
+    fig, ax = plt.subplots(figsize=(6.5, 6))
+    im = ax.imshow(pv, origin="lower", aspect="auto", cmap="inferno",
+                   extent=[pos_edges[0], pos_edges[-1], vel_edges[0], vel_edges[-1]])
+    ax.set_xlabel("position along slit (arcsec)")
+    ax.set_ylabel("line-of-sight velocity (km/s)\n(+ = redshift/receding)")
+    ax.axhline(0, color="cyan", lw=0.7, alpha=0.6)
+    ax.axvline(0, color="cyan", lw=0.7, alpha=0.6)
+    ax.set_title(title)
+    fig.colorbar(im, ax=ax, label="emissivity (arb.)")
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    fig.savefig(save_path, dpi=130)
+    plt.close(fig)
+    return save_path
+
 
 # --- Sky image -------------------------------------------------------------
 
