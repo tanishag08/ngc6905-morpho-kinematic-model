@@ -1,0 +1,22 @@
+Ejection order (oldest -> youngest, by median kinematic age):
+  lobes : 18,370 yr (1σ 11,223–35,731)
+  knots : 15,913 yr (1σ 9,632–31,346)
+  shell : 5,405 yr (1σ 4,332–6,987)
+
+Are the ages significantly different? (fraction of MC samples with A older than B)
+  lobes vs shell: P(lobes>shell)=0.99 -> lobes is clearly older; Δt median=12,771 yr (1σ 5,564..30,087)
+  knots vs shell: P(knots>shell)=0.98 -> knots is clearly older; Δt median=10,348 yr (1σ 3,953..25,444)
+  lobes vs knots: P(lobes>knots)=0.59 -> lobes is NOT clearly distinguishable; Δt median=2,178 yr (1σ -9,116..15,398)
+
+Interpretation: the central shell is the YOUNGEST component, while the
+deprojected bipolar lobes/knots have longer kinematic timescales. Taken at
+face value this points to an EARLIER large-scale bipolar ejection followed
+by a more recent central shell -- i.e. SEPARATE ejection episodes, the
+scenario motivating this study. HOWEVER (see limitations) the lobe/knot ages
+are inflated by the 1/cos i deprojection and rest on ASSUMED velocities, so
+the significance must be read together with the Monte-Carlo overlaps above.
+
+LIMITATIONS: homologous expansion is an approximation (wind acceleration would
+make true ages older); lobe/knot velocities are ASSUMED and the shell velocity
+is an old [O III] value; ages depend strongly on inclination via 1/cos i.
+Fitted P-V spectroscopy is required to turn these into firm ages.

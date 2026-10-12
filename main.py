@@ -288,8 +288,18 @@ def run_phase5(config=None):
     print("\nPhase 5 complete.")
 
 
+def run_phase6(config=None):
+    """Phase 6: kinematic ages, Monte Carlo uncertainties, ejection history."""
+    import ages
+    print("=" * 70)
+    print("PHASE 6: kinematic ages and evolutionary history")
+    print("=" * 70)
+    ages.run(config)
+    print("\nPhase 6 complete.")
+
+
 PHASES = {"phase1": run_phase1, "phase2": run_phase2, "phase3": run_phase3,
-          "phase4": run_phase4, "phase5": run_phase5}
+          "phase4": run_phase4, "phase5": run_phase5, "phase6": run_phase6}
 
 
 if __name__ == "__main__":

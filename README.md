@@ -28,6 +28,7 @@ python main.py phase3      # mesh + particle model + modifier demo + cross-check
 python main.py phase4      # synthetic obs (seeing, channels, composite) + real image + fit
 python main.py phase5      # self-test the interactive editor
 python editor.py           # launch the browser editor at http://127.0.0.1:8050
+python main.py phase6      # kinematic ages + Monte Carlo + ejection history
 ```
 
 ### Supplying a real image yourself
@@ -72,9 +73,10 @@ See `outputs/phase1_conventions.png` for the labelled diagram.
 | `observations.py` | download/align a real image (SkyView/SIMBAD) or load a FITS |
 | `fitting.py` | image-based geometry fitting (scipy.optimize) |
 | `editor.py` | interactive browser editor (Plotly Dash) |
+| `ages.py` | kinematic ages, Monte Carlo, ejection history |
 | `main.py` | phase driver |
 
-(Phases 6–8 add `ages.py`, `viz3d.py`, `export3d.py`.)
+(Phases 7–8 add `viz3d.py`, `export3d.py`.)
 
 ## Assumptions vs published values
 
@@ -98,4 +100,9 @@ velocities, opening angle, thicknesses, knot size) are tagged `[ASSUMPTION]`.
 - **Phase 5 — interactive editor:** complete. `editor.py` is a Plotly Dash app
   with sliders for every parameter, live 3D + synthetic/real image + both P-V
   diagrams + channel maps + live kinematic ages, and save/load/reset.
-- Phases 6–8: pending.
+- **Phase 6 — kinematic ages & history:** complete. Deprojected ages
+  (shell ~5.4 kyr; lobes/knots ~16–18 kyr), 10,000-sample Monte Carlo, age
+  distribution plot, CSV table, and interpretation. Shell is clearly the
+  youngest (P≈0.98–0.99); lobes vs knots indistinguishable. Big caveats:
+  assumed velocities + 1/cos i deprojection → P-V spectroscopy needed.
+- Phases 7–8: pending.

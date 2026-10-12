@@ -1,0 +1,4 @@
+component,angular_proj_arcsec,deprojected_arcsec,physical_AU,physical_pc,velocity_kms,age_yr,mc_median_yr,mc_lo_yr,mc_hi_yr,size_note,vel_note
+shell,19.0,19.0,51300.0,0.2487,45.0,5404.0,5405.0,4332.0,6987.0,PUBLISHED,PUBLISHED [O III]
+lobes,40.0,80.0,216000.0,1.0472,60.0,17066.0,18370.0,11223.0,35731.0,PUBLISHED (extent),ASSUMPTION
+knots,40.0,80.0,216000.0,1.0472,70.0,14628.0,15913.0,9632.0,31346.0,ASSUMPTION,ASSUMPTION
