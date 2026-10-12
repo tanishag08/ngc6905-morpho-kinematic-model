@@ -37,7 +37,7 @@ from plotly.subplots import make_subplots
 import config as cfg
 from config import ID_SHELL, ID_LOBE, ID_KNOT
 from particles import build_particle_model
-from modifiers import ModifierStack, Twist, Bump
+from modifiers import ModifierStack, Twist, Bump, SizeCurve
 from render import (synthetic_image, synthetic_pv, channel_maps,
                     plot_channel_maps)
 from units import kinematic_age_from_arcsec
@@ -75,7 +75,16 @@ SLIDERS = [
     ("knot_sigma_arcsec", "knot size sigma (arcsec)", 1, 10, 0.5, _d.knot.sigma_arcsec),
     ("knot_vel_kms", "knot v (km/s)", 20, 140, 1, _d.knot.velocity_kms),
     ("knot_emiss", "knot emissivity", 0, 5, 0.1, _d.knot.emissivity),
+
+    # SHAPE 'Size' modifier for the lobes: 5 curve control points (base -> tip),
+    # each a radius scale factor. All = 1.0 means the curve is flat (no change).
+    ("lobe_size_0", "Size curve · base", 0.2, 2.0, 0.05, 1.0),
+    ("lobe_size_1", "Size curve · 1", 0.2, 2.0, 0.05, 1.0),
+    ("lobe_size_2", "Size curve · 2", 0.2, 2.0, 0.05, 1.0),
+    ("lobe_size_3", "Size curve · 3", 0.2, 2.0, 0.05, 1.0),
+    ("lobe_size_4", "Size curve · tip", 0.2, 2.0, 0.05, 1.0),
 ]
+LOBE_SIZE_IDS = [f"lobe_size_{i}" for i in range(5)]
 SLIDER_IDS = [s[0] for s in SLIDERS]
 DEFAULT_PARAMS = {s[0]: s[5] for s in SLIDERS}
 
@@ -110,16 +119,31 @@ def make_config(params):
                        position_angle_deg=params["position_angle_deg"])
     conf = replace(_d, shell=shell, lobe=lobe, knot=knot, geometry=geometry)
 
-    # Optional lobe modifiers (twist about axis y=1, azimuthal bump about y).
+    # Optional lobe modifier stack (applied in order), SHAPE-style.
     mods = {}
     stack = []
     if params["lobe_twist"] > 0:
         stack.append(Twist(1, params["lobe_twist"]))
     if params["lobe_bump_amp"] > 0:
         stack.append(Bump(1, params["lobe_bump_amp"], frequency=6))
+    size_pts = [params[i] for i in LOBE_SIZE_IDS]
+    if any(abs(s - 1.0) > 1e-6 for s in size_pts):       # Size curve not flat
+        stack.append(SizeCurve(1, size_pts))
     if stack:
         mods[ID_LOBE] = ModifierStack(stack)
     return conf, mods
+
+
+def active_modifiers(params):
+    """Return the list of active lobe modifier names (for the stack display)."""
+    names = []
+    if params["lobe_twist"] > 0:
+        names.append(f"Twist  ({params['lobe_twist']:.1f}°/″)")
+    if params["lobe_bump_amp"] > 0:
+        names.append(f"Wiggle/Bump  (amp {params['lobe_bump_amp']:.1f}″)")
+    if any(abs(params[i] - 1.0) > 1e-6 for i in LOBE_SIZE_IDS):
+        names.append("Size  (curve)")
+    return names
 
 
 def compute_model(params, n_particles):
@@ -291,6 +315,39 @@ def age_table_html(params):
             f"</body></html>")
 
 
+def fig_size_curve(params):
+    """SHAPE 'Graphs' module: the lobe Size modifier curve (radius scale vs axis)."""
+    y = [params[i] for i in LOBE_SIZE_IDS]
+    x = np.linspace(0, 1, len(y))
+    xf = np.linspace(0, 1, 100)
+    yf = np.interp(xf, x, y)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=xf, y=yf, mode="lines", line=dict(color=ACCENT, width=2),
+                             name="Size curve"))
+    fig.add_trace(go.Scatter(x=x, y=y, mode="markers",
+                             marker=dict(size=9, color="#ff9a1a"), name="control pts"))
+    fig.add_hline(y=1.0, line=dict(color="#555", dash="dot"))
+    fig.update_xaxes(title="along lobe axis   base → tip", range=[-0.02, 1.02])
+    fig.update_yaxes(title="radius scale", range=[0, 2.1])
+    fig.update_layout(title="Size modifier curve (Graphs)", height=260,
+                      margin=dict(l=45, r=10, t=36, b=40), showlegend=False, **_DARK)
+    return fig
+
+
+def modstack_html(params):
+    """SHAPE-style modifier stack readout for each object."""
+    mods = active_modifiers(params)
+    lobe_mods = ("<br>".join(f"&nbsp;&nbsp;▸ {m}" for m in mods)
+                 if mods else "&nbsp;&nbsp;(none)")
+    return (f"<html><body style='margin:0;background:#1b1f26;color:#d6dae0;"
+            f"font-family:Consolas,monospace;font-size:11px'>"
+            f"<div style='color:#9aa4b2'>MODIFIER STACK</div>"
+            f"<div><span style='color:#33b5ff'>■</span> shell: &nbsp;(base ellipsoid)</div>"
+            f"<div><span style='color:#ff9a1a'>■</span> lobes:</div>{lobe_mods}"
+            f"<div><span style='color:#ff3333'>■</span> knots: &nbsp;(base Gaussians)</div>"
+            f"</body></html>")
+
+
 def channel_maps_png_b64(pmodel):
     """Render channel maps to a base64 PNG (for the full-render panel)."""
     buf = io.BytesIO()
@@ -387,12 +444,10 @@ def build_app():
         return html.Div([section(t, ids) for t, ids in sections],
                         style={"maxHeight": "74vh", "overflowY": "auto", "paddingRight": "6px"})
 
-    # Object tree (components + modifier count).
+    # Object tree + live modifier stack (SHAPE's object/modifier hierarchy).
     tree = html.Div([
-        html.Div("OBJECT TREE", style={"color": "#9aa4b2", "fontSize": "11px"}),
-        html.Div([html.Span("■ ", style={"color": "#33b5ff"}), "shell  — ellipsoid shell"]),
-        html.Div([html.Span("■ ", style={"color": "#ff9a1a"}), "lobes  — 2 cones (+twist/bump)"]),
-        html.Div([html.Span("■ ", style={"color": "#ff3333"}), "knots  — 2 Gaussian ansae"]),
+        html.Iframe(id="modstack", style={"border": 0, "width": "100%",
+                                          "height": "120px", "backgroundColor": PAPER_BG}),
     ], style=dict(S_PANEL, **{"fontSize": "12px"}))
 
     # Render module controls.
@@ -422,14 +477,25 @@ def build_app():
         dcc.Download(id="download_params"),
     ], style=dict(S_PANEL, **{"marginBottom": "6px"}))
 
+    # Graphs module: the SHAPE 'Size' modifier curve (control points + plot).
+    graphs_module = html.Div([
+        section("Lobe Size modifier  (SHAPE 'Size')", LOBE_SIZE_IDS),
+        dcc.Graph(id="g_sizecurve", config={"displayModeBar": False}),
+        html.Div("Set the control points to shape the lobe radius from base to "
+                 "tip (1.0 = unchanged). This is SHAPE's curve-driven Size modifier.",
+                 style={"fontSize": "11px", "color": "#8a93a0"}),
+    ], style={"maxHeight": "74vh", "overflowY": "auto", "paddingRight": "6px"})
+
     tabs = dcc.Tabs([
-        dcc.Tab(module(STRUCTURE_SECTIONS), label="① Structure",
+        dcc.Tab(module(STRUCTURE_SECTIONS), label="3D",
                 style=S_TAB, selected_style=S_TAB_SEL),
-        dcc.Tab(module(PHYSICS_SECTIONS), label="② Physics",
+        dcc.Tab(module(PHYSICS_SECTIONS), label="Physics",
                 style=S_TAB, selected_style=S_TAB_SEL),
-        dcc.Tab(render_module, label="③ Render",
+        dcc.Tab(graphs_module, label="Graphs",
                 style=S_TAB, selected_style=S_TAB_SEL),
-    ], style={"height": "36px"})
+        dcc.Tab(render_module, label="Rendering",
+                style=S_TAB, selected_style=S_TAB_SEL),
+    ], style={"height": "34px"})
 
     def viewport(title, graph_id, w="50%"):
         return html.Div(dcc.Graph(id=graph_id, config={"displModeBar": False}),
@@ -473,6 +539,7 @@ def build_app():
         [Output("g_synth", "figure"), Output("g_real", "figure"),
          Output("g_pv_major", "figure"), Output("g_pv_minor", "figure"),
          Output("g_3d", "figure"), Output("age_box", "srcDoc"),
+         Output("g_sizecurve", "figure"), Output("modstack", "srcDoc"),
          Output("channel_img", "src")],
         [Input(sid, "value") for sid in SLIDER_IDS]
         + [Input("render_btn", "n_clicks"), Input("view_mode", "value")],
@@ -485,7 +552,8 @@ def build_app():
         figs = (fig_synthetic(pmodel, half), fig_real(half),
                 fig_pv(pmodel, cfg.DEFAULT.render.pv_slit_pa_major_deg, "P-V major (PA 160°)"),
                 fig_pv(pmodel, cfg.DEFAULT.render.pv_slit_pa_minor_deg, "P-V minor (PA 70°)"),
-                fig_3d(pmodel, params, mode=view_mode), age_table_html(params))
+                fig_3d(pmodel, params, mode=view_mode), age_table_html(params),
+                fig_size_curve(params), modstack_html(params))
         channels = channel_maps_png_b64(pmodel) if full else no_update
         return (*figs, channels)
 
@@ -532,9 +600,12 @@ def _selftest():
         _ = fig_3d(pm, params, mode=mode)
     ages = kinematic_ages(params)
     assert all(np.isfinite(list(ages.values())))
-    # modifiers path
-    params2 = dict(params, lobe_twist=4.0, lobe_bump_amp=3.0)
+    # modifiers path incl. SHAPE Size-curve
+    params2 = dict(params, lobe_twist=4.0, lobe_bump_amp=3.0,
+                   lobe_size_0=1.4, lobe_size_4=0.4)
     pm2 = compute_model(params2, 2000)
+    assert active_modifiers(params2) and len(active_modifiers(params2)) == 3
+    _ = fig_size_curve(params2); _ = modstack_html(params2)
     # save/load round-trip
     txt = params_to_json(params)
     back = params_from_json(txt)

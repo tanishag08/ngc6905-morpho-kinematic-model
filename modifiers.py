@@ -120,6 +120,34 @@ class Taper:
         return pts
 
 
+class SizeCurve:
+    """SHAPE-style 'Size' / 'Squeeze' modifier driven by a curve.
+
+    In SHAPE the Size modifier scales an object's radius along its axis according
+    to a curve edited in the Graphs module. Here `control_scales` are the radius
+    scale factors at normalised axial positions linspace(0, 1, N) (0 = base /
+    object centre, 1 = tip); intermediate values are linearly interpolated. The
+    perpendicular radius of each point is multiplied by the interpolated scale.
+    """
+
+    def __init__(self, axis, control_scales, use_abs=True):
+        self.axis = axis
+        self.scales = np.asarray(control_scales, dtype=float)
+        self.use_abs = use_abs
+
+    def __call__(self, pts):
+        pts = np.array(pts, dtype=float, copy=True)
+        j, k = _PERP[self.axis]
+        s = np.abs(pts[:, self.axis]) if self.use_abs else pts[:, self.axis]
+        s_min, s_max = s.min(), s.max()
+        t = np.zeros_like(s) if s_max == s_min else (s - s_min) / (s_max - s_min)
+        xp = np.linspace(0.0, 1.0, len(self.scales))
+        scale = np.interp(t, xp, self.scales)
+        pts[:, j] *= scale
+        pts[:, k] *= scale
+        return pts
+
+
 class DensityFalloff:
     """Emissivity weighting that decreases from a reference surface inward.
 
