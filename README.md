@@ -26,6 +26,8 @@ python main.py phase1      # build the analytic grid model + first observables
 python main.py phase2      # run the 7 validation tests (writes outputs/phase2_*.png)
 python main.py phase3      # mesh + particle model + modifier demo + cross-check
 python main.py phase4      # synthetic obs (seeing, channels, composite) + real image + fit
+python main.py phase5      # self-test the interactive editor
+python editor.py           # launch the browser editor at http://127.0.0.1:8050
 ```
 
 ### Supplying a real image yourself
@@ -69,9 +71,10 @@ See `outputs/phase1_conventions.png` for the labelled diagram.
 | `tests.py` | Phase 2 validation + Phase 3 particle cross-check |
 | `observations.py` | download/align a real image (SkyView/SIMBAD) or load a FITS |
 | `fitting.py` | image-based geometry fitting (scipy.optimize) |
+| `editor.py` | interactive browser editor (Plotly Dash) |
 | `main.py` | phase driver |
 
-(Phases 5–8 add `ages.py`, `viz3d.py`, `export3d.py`, `editor.py`.)
+(Phases 6–8 add `ages.py`, `viz3d.py`, `export3d.py`.)
 
 ## Assumptions vs published values
 
@@ -90,4 +93,9 @@ velocities, opening angle, thicknesses, knot size) are tagged `[ASSUMPTION]`.
   image fitter (self-consistency corr 0.999) all work. The real-image download
   depends on SkyView being reachable; it is time-bounded and degrades to a FITS
   fallback. Image fitting constrains geometry only — **not** velocities/ages.
-- Phases 5–8: pending.
+  **Real data:** a Pan-STARRS g/r image of NGC 6905 (from MAST) is resolved,
+  aligned, and compared/fit (`outputs/phase4_real_vs_synthetic_PS1.png`).
+- **Phase 5 — interactive editor:** complete. `editor.py` is a Plotly Dash app
+  with sliders for every parameter, live 3D + synthetic/real image + both P-V
+  diagrams + channel maps + live kinematic ages, and save/load/reset.
+- Phases 6–8: pending.

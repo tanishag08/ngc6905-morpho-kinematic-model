@@ -278,8 +278,18 @@ def run_phase4(config=None):
     return pm
 
 
+def run_phase5(config=None):
+    """Phase 5: interactive browser editor (headless self-test + launch hint)."""
+    import editor
+    editor._selftest()
+    print("\nPhase 5 editor is ready. Launch the browser app with:")
+    print("    python editor.py")
+    print("then open http://127.0.0.1:8050")
+    print("\nPhase 5 complete.")
+
+
 PHASES = {"phase1": run_phase1, "phase2": run_phase2, "phase3": run_phase3,
-          "phase4": run_phase4}
+          "phase4": run_phase4, "phase5": run_phase5}
 
 
 if __name__ == "__main__":
