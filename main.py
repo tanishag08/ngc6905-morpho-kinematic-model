@@ -231,28 +231,47 @@ def run_phase4(config=None):
     p = plot_channel_maps(pm, f"{out}/phase4_channel_maps.png")
     print(f"[saved] channel maps -> {p}")
 
-    # 2) Real image: download + align + compare (graceful on failure).
-    print("\nAttempting real image download (SIMBAD + SkyView)...")
-    real, half, meta = obs.get_real_image(half_arcsec=config.grid.half_size_arcsec,
-                                          per_survey_timeout_s=25)
-    print(f"  coords: {meta['coord_source']} "
-          f"(RA={meta['ra_deg']:.4f}, Dec={meta['dec_deg']:.4f})")
-    print(f"  {meta['message']}")
-    if real is not None:
-        synth, _ = synthetic_image(pm, fov_arcsec=2 * half)
-        p = obs.save_comparison(real, synth, half, f"{out}/phase4_real_vs_synthetic.png",
-                                title=f"NGC 6905: real ({meta['survey']}) vs synthetic")
+    # 2) Real image: prefer the saved Pan-STARRS cutout (self-contained); fall
+    #    back to a SkyView download; otherwise skip gracefully.
+    import os
+    half = config.grid.half_size_arcsec
+    real_disp = real_fit = None
+    label = None
+    ps1_path = "data/ps1_g_aligned.npy"
+    if os.path.exists(ps1_path):
+        raw = np.load(ps1_path)                           # 400x400, +-50"
+        real_disp = obs.suppress_stars(raw)               # star-removed nebula
+        # downsample to the fit grid (100x100 at 1"/pix) for the geometry fit
+        k = real_disp.shape[0] // 100
+        real_fit = real_disp[:100 * k, :100 * k].reshape(100, k, 100, k).mean(axis=(1, 3))
+        label = "Pan-STARRS1 g (local)"
+        print(f"\nUsing saved real image: {ps1_path}  [{label}]")
+    else:
+        print("\nNo local PS1 image; attempting SkyView download...")
+        dl, half, meta = obs.get_real_image(half_arcsec=half, per_survey_timeout_s=25)
+        print(f"  coords: {meta['coord_source']}; {meta['message']}")
+        if dl is not None:
+            real_disp = dl
+            real_fit = dl
+            label = meta["survey"]
+
+    if real_disp is not None:
+        synth, _ = synthetic_image(pm, pixel_scale=2 * half / real_disp.shape[0],
+                                   fov_arcsec=2 * half)
+        p = obs.save_comparison(real_disp, synth, half,
+                                f"{out}/phase4_real_vs_synthetic.png",
+                                title=f"NGC 6905: real ({label}) vs synthetic")
         print(f"[saved] real vs synthetic + difference -> {p}")
-        # Fit to the real image too.
-        print("\nFitting geometry to the REAL image...")
-        rres = fitting.fit_image(real, half, base_config=config, verbose=True)
+        print("\nFitting geometry to the REAL image "
+              "(broadband/thin-shell mismatch -> modest correlation expected)...")
+        rres = fitting.fit_image(real_fit, half, base_config=config, verbose=True)
         import json
         with open(f"{out}/phase4_realfit_params.json", "w") as f:
             json.dump({"best": rres["best"], "start": rres["start"],
-                       "best_loss": rres["best_loss"]}, f, indent=2)
+                       "best_loss": rres["best_loss"], "real_image": label}, f, indent=2)
         print(f"[saved] real-image best-fit -> {out}/phase4_realfit_params.json")
     else:
-        print("  -> Skipping real-vs-synthetic and real fit. "
+        print("  -> No real image available. "
               "Supply a FITS via observations.load_fits_image(path).")
 
     # 3) Fitting self-consistency demo (always runs; no network needed).

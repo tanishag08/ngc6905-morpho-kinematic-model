@@ -1,0 +1,18 @@
+{
+  "best": {
+    "inclination_deg": 75.04975337266131,
+    "position_angle_deg": 120.30774116568051,
+    "shell_radius_arcsec": 19.31505073049137,
+    "lobe_length_arcsec": 38.146945248041106,
+    "lobe_opening_deg": 21.534892501392168
+  },
+  "start": {
+    "inclination_deg": 60.0,
+    "position_angle_deg": 160.0,
+    "shell_radius_arcsec": 19.0,
+    "lobe_length_arcsec": 40.0,
+    "lobe_opening_deg": 18.0
+  },
+  "best_loss": 0.36092271140375676,
+  "real_image": "Pan-STARRS1 g (local)"
+}
